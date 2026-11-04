@@ -1,0 +1,23 @@
+# Third-party notices
+
+The code and documents in this repo are MIT unless stated here. Bundled third-party material keeps its own licence.
+
+## Fish Video Skill
+
+| Material | Where | Licence |
+|---|---|---|
+| Sound effects by Kenney (Interface Sounds, Impact Sounds, UI Audio) | `skills/fish-video-skill/sfx/library/` | CC0 ([kenney.nl](https://kenney.nl)); licence files are next to the sounds |
+| Photos in the sample video | `skills/fish-video-skill/examples/why-you-cant-put-it-down/assets/` | Each file's author and licence are in that folder's `credits.json`: CC0, CC BY 4.0 and CC BY-SA 4.0. They are **not** MIT. The CC BY-SA ones, and adaptations of them, stay under CC BY-SA |
+| Sample video and its stills | the same `examples` folder | Contains those photos, so the same attribution and share-alike terms apply |
+
+### Installed by the setup, not bundled
+
+Fonts (Inter, Fraunces, JetBrains Mono, Caveat, Noto Sans Devanagari via Fontsource), ffmpeg (via `ffmpeg-static`), puppeteer-core, rough.js, yt-dlp, edge-tts. Optional extras the skill can install: rembg, Kokoro, faster-whisper, librosa. Each keeps its own licence. Check them for your use, especially ffmpeg builds and any model weights.
+
+### Rights in what you make
+
+Licences for assets you download through the skill are logged per project in `assets/credits.json`. You are responsible for following them, and for the terms of any service you use (ElevenLabs plans, YouTube's terms of service, and so on).
+
+### Ideas from open source
+
+The methods draw on ideas from many open-source projects, listed in `skills/fish-video-skill/references/open-source-field-guide.md`. No code was copied from them.

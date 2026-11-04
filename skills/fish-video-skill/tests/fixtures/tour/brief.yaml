@@ -1,0 +1,19 @@
+# Smoke-test brief: a short read-only tour of the ImuTechz site.
+# SITE env var (or the test) swaps the URL: the dev server http://localhost:3000 or https://www.imutechz.in
+title: "ImuTechz tour smoke test"
+structure: product-tour
+length: 10
+platforms: [youtube]
+language: en-IN
+brand:
+  name: ImuTechz
+  url: imutechz.in
+  tagline: "Open-source R&D, built in public."
+website:
+  url: http://localhost:3000
+  theme: light
+  storage: {imu-theme: light}
+  hide: [".intro-skip"]
+voice:
+  provider: edge-tts
+  pronunciations: {ImuTechz: "Imu techs"}

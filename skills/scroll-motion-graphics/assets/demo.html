@@ -1,0 +1,1255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scroll Motion Demo</title>
+<meta name="description" content="Five canvas reels scrubbed by scroll, captions the drawing never touches, and an interactive story drum. Zero dependencies. ImuTechz, MIT.">
+<!--
+  scroll-motion-graphics · demo.html · ImuTechz · MIT
+
+  One file, zero dependencies: double-click it. Everything the page
+  needs is inlined below, in this order:
+    1. scroll-motion.css   (the film + drum styles, light/dark tokens)
+    2. page styles         (intro, interlude, outro)
+    3. scroll-motion.js    (the engine: scrub, film, drum, helpers)
+    4. reels.js            (the five reels: orbit, path, stack, wave, close)
+    5. page wiring         (≈60 lines at the bottom: read this first)
+  The inlined copies are identical to the files next to this one.
+-->
+<style>
+/*! scroll-motion.css v1.0.0 · ImuTechz · MIT
+   The film (.smf) and the story drum (.sd). Colours are tokens on :root;
+   the canvas reads the same tokens (ScrollMotion.readPalette), so light
+   and dark mode are this one stylesheet. */
+
+:root {
+  --sm-bg: #f3ede2;
+  --sm-surface: #fbf8f2;
+  --sm-ink: #1c1914;
+  --sm-muted: #5c554b;
+  --sm-dim: #8a8277;
+  --sm-line: rgba(28, 25, 20, 0.12);
+  --sm-line-strong: rgba(28, 25, 20, 0.22);
+  --sm-accent: #f2661a;
+  --sm-accent-2: #d9481e;
+  --sm-accent-soft: rgba(242, 102, 26, 0.18);
+  --sm-cool: #2e6c96;
+  --sm-card: rgba(255, 255, 255, 0.74);
+  --sm-card-line: rgba(255, 255, 255, 0.9);
+  --sm-shadow: rgba(28, 25, 20, 0.4);
+  --sm-on-ink: #fbf8f2;
+  --sm-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --sm-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sm-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --sm-nav-h: 0px; /* height of a fixed site header, if the page has one */
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sm-bg: #0d0c0b; --sm-surface: #171513; --sm-ink: #f4efe7; --sm-muted: #b9b0a3; --sm-dim: #8a8277;
+    --sm-line: rgba(244, 239, 231, 0.12); --sm-line-strong: rgba(244, 239, 231, 0.24);
+    --sm-accent: #ff7a33; --sm-accent-2: #f2661a; --sm-accent-soft: rgba(255, 122, 51, 0.22); --sm-cool: #6fb2dc;
+    --sm-card: rgba(24, 22, 20, 0.78); --sm-card-line: rgba(255, 255, 255, 0.12); --sm-shadow: rgba(0, 0, 0, 0.9); --sm-on-ink: #0d0c0b;
+  }
+}
+:root[data-theme="dark"] {
+  --sm-bg: #0d0c0b; --sm-surface: #171513; --sm-ink: #f4efe7; --sm-muted: #b9b0a3; --sm-dim: #8a8277;
+  --sm-line: rgba(244, 239, 231, 0.12); --sm-line-strong: rgba(244, 239, 231, 0.24);
+  --sm-accent: #ff7a33; --sm-accent-2: #f2661a; --sm-accent-soft: rgba(255, 122, 51, 0.22); --sm-cool: #6fb2dc;
+  --sm-card: rgba(24, 22, 20, 0.78); --sm-card-line: rgba(255, 255, 255, 0.12); --sm-shadow: rgba(0, 0, 0, 0.9); --sm-on-ink: #0d0c0b;
+}
+
+.sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ───────────── the film ───────────── */
+
+/* the track: tall, so scrolling through it is the timeline. Never put
+   overflow: hidden/auto on an ancestor of the track, or sticky breaks. */
+.smf { position: relative; height: calc(var(--smf-n, 5) * 90svh + 100svh); }
+.smf-stage { position: sticky; top: 0; height: 100svh; overflow: hidden; color: var(--sm-ink); }
+.smf-canvas { position: absolute; inset: 0; display: block; pointer-events: none; }
+.smf-frame { position: absolute; inset: calc(var(--sm-nav-h) + 16px) clamp(16px, 4vw, 48px) 20px; pointer-events: none; }
+.smf-frame > * { pointer-events: auto; }
+
+.smf-hud { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 16px; font-family: var(--sm-mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--sm-dim); }
+.smf-hud-t { color: var(--sm-ink); }
+.smf-hud-bar { flex: 1; height: 1.5px; background: var(--sm-line-strong); position: relative; overflow: hidden; }
+.smf-hud-bar > i { position: absolute; inset: 0; background: var(--sm-accent); transform-origin: left; transform: scaleX(0); }
+
+.smf-cap {
+  position: absolute; width: min(400px, 100%); padding: 22px 24px 24px; border-radius: 20px;
+  background: var(--sm-card); border: 1px solid var(--sm-card-line);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow: 0 18px 50px -26px var(--sm-shadow);
+  opacity: 0; visibility: hidden; will-change: opacity, transform;
+}
+.smf-cap[data-place="left"] { left: 0; top: 50%; margin-top: -110px; }
+.smf-cap[data-place="right"] { right: 0; top: 50%; margin-top: -110px; }
+.smf-cap[data-place="bottom"] { left: 0; bottom: 0; width: min(560px, 100%); }
+.smf-cap[data-place="top"] { left: 0; top: 44px; }
+.smf-cap-k { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 12px; font-family: var(--sm-mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--sm-accent-2); }
+.smf-cap-h { margin: 0 0 10px; font-size: clamp(21px, 2.2vw, 28px); line-height: 1.12; letter-spacing: -0.02em; font-weight: 600; }
+.smf-cap-d { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--sm-muted); }
+.smf-hint { position: absolute; right: 0; bottom: 0; margin: 0; font-family: var(--sm-mono); font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--sm-dim); }
+
+@media (max-width: 759px) {
+  .smf { height: calc(var(--smf-n, 5) * 80svh + 100svh); }
+  .smf-frame { inset: calc(var(--sm-nav-h) + 12px) 16px 16px; }
+  .smf-cap, .smf-cap[data-place] { left: 0; right: 0; top: auto; bottom: 0; width: auto; margin: 0; padding: 16px 18px 18px; }
+  .smf-cap-d { font-size: 14px; }
+  .smf-hint { display: none; }
+  .smf-hud-x { display: none; }
+}
+
+/* ───────────── the story drum ───────────── */
+
+.sd { position: relative; }
+.sd-stage {
+  position: sticky; top: 0; height: 100svh; max-width: 1320px; margin: 0 auto;
+  padding: var(--sm-nav-h) clamp(16px, 4vw, 40px) 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 1.1fr) 180px; align-items: center; gap: clamp(20px, 3.5vw, 52px);
+  color: var(--sm-ink);
+}
+.sd-k { margin: 0 0 12px; font-family: var(--sm-mono); font-size: 11.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--sm-dim); }
+.sd-title { margin: 0 0 26px; font-size: clamp(30px, 3.6vw, 50px); line-height: 1.02; letter-spacing: -0.03em; }
+.sd-cap { min-height: 250px; animation: sd-in 0.55s var(--sm-ease) both; }
+.sd-cap[hidden] { display: none; }
+@keyframes sd-in { from { opacity: 0; transform: translateY(18px); filter: blur(5px); } }
+.sd-n { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--sm-accent-2); }
+.sd-h { margin: 0 0 12px; font-size: clamp(22px, 2.2vw, 30px); line-height: 1.15; letter-spacing: -0.02em; }
+.sd-d { margin: 0 0 18px; max-width: 42ch; font-size: 15.5px; line-height: 1.6; color: var(--sm-muted); }
+.sd-cta { display: inline-flex; gap: 8px; padding: 11px 18px; border-radius: 999px; background: var(--sm-ink); color: var(--sm-on-ink); font-weight: 600; font-size: 14px; text-decoration: none; transition: transform 0.3s; }
+.sd-cta:hover { transform: translateY(-2px); }
+.sd-cta:focus-visible, .sd-nav button:focus-visible, .sd-rail button:focus-visible { outline: 2px solid var(--sm-accent); outline-offset: 3px; }
+.sd-nav { display: flex; align-items: center; gap: 8px; margin-top: 26px; }
+.sd-nav button { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--sm-line-strong); background: var(--sm-surface); color: var(--sm-ink); font-size: 20px; line-height: 1; cursor: pointer; transition: background 0.2s, color 0.2s; }
+.sd-nav button:hover:not(:disabled) { background: var(--sm-ink); color: var(--sm-on-ink); }
+.sd-nav button:disabled { opacity: 0.35; cursor: default; }
+.sd-tip { margin-left: 8px; font-size: 12px; color: var(--sm-dim); }
+
+.sd-viewport {
+  --r: clamp(180px, 19vw, 260px);
+  position: relative; height: min(74vh, 600px); perspective: 1300px; display: grid; place-items: center;
+  cursor: grab; outline: none; touch-action: pan-y; /* touch scrolls the page natively */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent);
+}
+.sd-viewport.dragging { cursor: grabbing; }
+.sd-viewport:focus-visible .sd-face.on { outline: 2px solid var(--sm-accent); outline-offset: 4px; }
+.sd-ring { position: relative; width: 100%; height: calc(var(--r) * 1.12); transform-style: preserve-3d; will-change: transform; }
+.sd-face {
+  position: absolute; inset: 0; display: grid; grid-template-rows: 1fr auto; padding: 10px; border-radius: 22px;
+  text-decoration: none; color: var(--sm-ink); background: var(--sm-surface); border: 1px solid var(--sm-line-strong);
+  backface-visibility: hidden; -webkit-backface-visibility: hidden; user-select: none; -webkit-user-drag: none;
+  transition: border-color 0.4s, box-shadow 0.4s;
+}
+.sd-face.on { border-color: var(--sm-accent); box-shadow: 0 30px 70px -40px var(--sm-shadow), 0 0 0 4px var(--sm-accent-soft); }
+.sd-face-art { position: relative; border-radius: 14px; overflow: hidden; background: var(--sm-bg); }
+.sd-face-art canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.sd-face-meta { display: flex; align-items: center; gap: 12px; padding: 12px 6px 4px; }
+.sd-face-n { font-family: var(--sm-mono); font-size: 11px; color: var(--sm-dim); }
+.sd-face-t { flex: 1; font-weight: 600; font-size: 16px; }
+.sd-face-go { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--sm-ink); color: var(--sm-on-ink); font-size: 14px; transition: transform 0.3s; }
+.sd-face.on:hover .sd-face-go { transform: rotate(45deg); }
+
+.sd-rail { position: relative; list-style: none; margin: 0; padding: 0 0 0 22px; display: grid; gap: 14px; }
+.sd-rail > i { position: absolute; left: 0; top: 6px; bottom: 6px; width: 1.5px; background: var(--sm-line-strong); }
+.sd-rail > i > i { position: absolute; inset: 0; background: var(--sm-accent); transform-origin: top; transform: scaleY(0); }
+.sd-rail button { border: 0; background: none; padding: 2px 0; font: inherit; font-family: var(--sm-mono); font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; text-align: left; color: var(--sm-dim); cursor: pointer; transition: color 0.3s, transform 0.3s; }
+.sd-rail li.done button { color: var(--sm-muted); }
+.sd-rail li.on button { color: var(--sm-ink); transform: translateX(4px); }
+.sd-rail button:hover { color: var(--sm-accent-2); }
+
+@media (max-width: 1000px) {
+  .sd-stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; align-content: center; gap: 18px; padding-top: calc(var(--sm-nav-h) + 8px); }
+  .sd-rail, .sd-title, .sd-tip { display: none; }
+  .sd-d { display: none; }
+  .sd-nav { margin-top: 12px; }
+  .sd-nav button { width: 44px; height: 44px; } /* touch targets */
+  .sd-viewport { --r: clamp(150px, 40vw, 220px); height: min(52vh, 440px); }
+  .sd-copy { order: 2; }
+  .sd-cap { min-height: 150px; }
+  .sd-h { font-size: 22px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sd-cap { animation: none; }
+  .sd-face, .sd-rail button, .sd-cta, .sd-face-go { transition: none; }
+}
+
+/* ───────────── a self-rolling preview drum (decorative) ───────────── */
+
+.sdp { --r: clamp(90px, 11vw, 150px); --sdp-n: 4; position: absolute; inset: 0; display: grid; place-items: center; perspective: 900px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent); mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent); }
+.sdp-ring { position: relative; width: 70%; height: calc(var(--r) * 1.12); transform-style: preserve-3d; animation: sdp-roll 12s cubic-bezier(0.7, 0, 0.3, 1) infinite; }
+.sdp-face { position: absolute; inset: 0; border-radius: 16px; overflow: hidden; background: var(--sm-surface); border: 1px solid var(--sm-line-strong); backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+/* four faces: dwell 18% of the loop on each, roll in 7% */
+@keyframes sdp-roll {
+  0%, 18% { transform: translateZ(calc(var(--r) * -1)) rotateX(0deg); }
+  25%, 43% { transform: translateZ(calc(var(--r) * -1)) rotateX(90deg); }
+  50%, 68% { transform: translateZ(calc(var(--r) * -1)) rotateX(180deg); }
+  75%, 93% { transform: translateZ(calc(var(--r) * -1)) rotateX(270deg); }
+  100% { transform: translateZ(calc(var(--r) * -1)) rotateX(360deg); }
+}
+@media (prefers-reduced-motion: reduce) { .sdp-ring { animation: none; transform: translateZ(calc(var(--r) * -1)); } }
+</style>
+<style>
+/* ── page ── */
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+body { margin: 0; background: var(--sm-bg); color: var(--sm-ink); font-family: var(--sm-font); line-height: 1.5; }
+a { color: inherit; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 48px); }
+.intro { min-height: 92svh; display: grid; align-content: center; padding: 64px 0 48px; }
+.eyebrow { margin: 0 0 18px; font-family: var(--sm-mono); font-size: 11.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--sm-dim); }
+.intro h1 { margin: 0 0 20px; font-size: clamp(40px, 7.4vw, 104px); line-height: 0.96; letter-spacing: -0.045em; font-weight: 650; }
+.intro h1 b { color: var(--sm-accent); font-weight: inherit; }
+.lede { max-width: 58ch; margin: 0 0 28px; font-size: clamp(16px, 1.5vw, 19px); color: var(--sm-muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 32px; padding: 0; list-style: none; }
+.chips li { padding: 6px 12px; border: 1px solid var(--sm-line-strong); border-radius: 999px; font-size: 13px; color: var(--sm-muted); }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--sm-line-strong); background: var(--sm-surface); color: var(--sm-ink); font: 600 14px var(--sm-font); text-decoration: none; cursor: pointer; }
+.btn-solid { background: var(--sm-ink); color: var(--sm-on-ink); border-color: transparent; }
+.btn:focus-visible { outline: 2px solid var(--sm-accent); outline-offset: 3px; }
+.down { font-family: var(--sm-mono); font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--sm-dim); }
+.mid { padding: clamp(80px, 14vh, 160px) 0; }
+.mid h2, .outro h2 { margin: 0 0 16px; font-size: clamp(28px, 4vw, 52px); line-height: 1.04; letter-spacing: -0.03em; }
+.mid p { max-width: 60ch; color: var(--sm-muted); font-size: 17px; margin: 0; }
+.outro { padding: clamp(80px, 14vh, 160px) 0 64px; }
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 14px; margin: 28px 0 40px; padding: 0; list-style: none; counter-reset: r; }
+.rules li { counter-increment: r; padding: 20px 20px 22px; border: 1px solid var(--sm-line); border-radius: 18px; background: var(--sm-surface); font-size: 14.5px; color: var(--sm-muted); }
+.rules li::before { content: counter(r, decimal-leading-zero); display: block; margin-bottom: 10px; font-family: var(--sm-mono); font-size: 11px; letter-spacing: 0.16em; color: var(--sm-accent-2); }
+.rules b { display: block; margin-bottom: 4px; color: var(--sm-ink); font-size: 15.5px; }
+footer { padding: 28px 0 40px; border-top: 1px solid var(--sm-line); font-size: 13px; color: var(--sm-dim); }
+.smf-anchor { position: absolute; left: 0; width: 1px; height: 1px; }
+</style>
+</head>
+<body>
+
+<header class="wrap intro">
+  <p class="eyebrow">ImuTechz skill · scroll-motion-graphics · live demo</p>
+  <h1>Scroll motion<br>graphics<b>.</b></h1>
+  <p class="lede">A canvas film whose only clock is your scroll position. Five reels, each a pure function of progress, so it seeks both ways like a video. Captions are measured every frame and the drawing never runs under them. Then the same timeline becomes a control: a story drum you can scroll, drag, click or step with the arrow keys.</p>
+  <ul class="chips" aria-label="Properties">
+    <li>Canvas 2D</li><li>Zero dependencies</li><li>Pure functions of p</li><li>Never pins input</li><li>Reduced motion</li><li>360 → 1920</li>
+  </ul>
+  <div class="row">
+    <a class="btn btn-solid" href="#reel-orbit">Start the film</a>
+    <a class="btn" href="#drum">Jump to the drum</a>
+    <button class="btn" type="button" id="theme" aria-live="polite">Theme: auto</button>
+    <span class="down" aria-hidden="true">Scroll ↓</span>
+  </div>
+</header>
+
+<!-- ───────── the film: a tall track, a sticky stage, one canvas ───────── -->
+<section class="smf" id="film" style="--smf-n: 5" aria-label="A film in five reels, scrubbed by scroll">
+  <a class="smf-anchor" id="reel-orbit" data-at="0.5" tabindex="-1" aria-hidden="true"></a>
+  <a class="smf-anchor" id="reel-path" data-at="1.55" tabindex="-1" aria-hidden="true"></a>
+  <a class="smf-anchor" id="reel-stack" data-at="2.55" tabindex="-1" aria-hidden="true"></a>
+  <a class="smf-anchor" id="reel-wave" data-at="3.55" tabindex="-1" aria-hidden="true"></a>
+  <a class="smf-anchor" id="reel-close" data-at="4.7" tabindex="-1" aria-hidden="true"></a>
+  <div class="smf-stage">
+    <canvas class="smf-canvas" aria-hidden="true"></canvas>
+    <div class="smf-frame">
+      <div class="smf-hud" data-keep>
+        <span class="smf-hud-t">Five reels</span>
+        <span data-sm-count>01 / 05</span>
+        <span class="smf-hud-bar" aria-hidden="true"><i data-sm-bar></i></span>
+        <span class="smf-hud-x">scroll to scrub</span>
+      </div>
+      <article class="smf-cap" data-place="left" data-reel="orbit">
+        <p class="smf-cap-k"><span>01 · Orbit</span><span>Pin a stage</span></p>
+        <h3 class="smf-cap-h">One timeline, many moving parts.</h3>
+        <p class="smf-cap-d">The section is a tall track and the stage inside it is sticky. How far you have scrolled through the track is p, from 0 to 1, and it is the only clock this film has.</p>
+      </article>
+      <article class="smf-cap" data-place="bottom" data-reel="path">
+        <p class="smf-cap-k"><span>02 · Path</span><span>Scrub, don't play</span></p>
+        <h3 class="smf-cap-h">Every frame is a function of p.</h3>
+        <p class="smf-cap-d">Scroll back and the route un-draws. The same scroll position always paints the same frame, so it seeks both ways like a video.</p>
+      </article>
+      <article class="smf-cap" data-place="right" data-reel="stack">
+        <p class="smf-cap-k"><span>03 · Stack</span><span>Stagger</span></p>
+        <h3 class="smf-cap-h">Build in order, land in place.</h3>
+        <p class="smf-cap-d">Each bar owns a window inside the reel, and an ease-out makes it land rather than stop. The trend line waits until the bars have settled.</p>
+      </article>
+      <article class="smf-cap" data-place="top" data-reel="wave">
+        <p class="smf-cap-k"><span>04 · Wave</span><span>No clock</span></p>
+        <h3 class="smf-cap-h">Rhythm without a timer.</h3>
+        <p class="smf-cap-d">The phase comes from p, not from time. When you stop scrolling the film stops drawing, so an idle page costs nothing.</p>
+      </article>
+      <article class="smf-cap" data-place="left" data-reel="close">
+        <p class="smf-cap-k"><span>05 · Close</span><span>Resolve</span></p>
+        <h3 class="smf-cap-h">Everything lands on one mark.</h3>
+        <p class="smf-cap-d">Captions are measured every frame. Reels lay out in the space they leave, and the canvas is clipped around them, so the drawing never runs under the words.</p>
+      </article>
+      <p class="smf-hint" data-keep>Scroll back: it rewinds</p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap mid">
+  <p class="eyebrow">Interlude</p>
+  <h2>Now the timeline is a control.</h2>
+  <p>The drum below is rolled by the same scroll engine. Every face is a link to its reel in the film above. The rail and the arrow buttons scroll the page to a chapter, so the scroll position and the drum can never disagree. Drag it with a mouse, or focus it and use the arrow keys.</p>
+</section>
+
+<!-- ───────── the story drum ───────── -->
+<section class="sd" id="drum" style="height: calc(5 * 70vh + 100vh)" aria-label="Story drum: the five reels">
+  <div class="sd-stage">
+    <div class="sd-copy">
+      <p class="sd-k">Roll it · <span data-sd-count>01 / 05</span></p>
+      <h2 class="sd-title">Roll the drum.</h2>
+      <div class="sd-cap" data-sd-cap>
+        <p class="sd-n">Orbit</p>
+        <h3 class="sd-h">A tall track, a sticky stage.</h3>
+        <p class="sd-d">The section is several screens tall and the stage inside it is position: sticky. Progress through the track is the timeline.</p>
+        <a class="sd-cta" href="#reel-orbit">Watch the reel <span aria-hidden="true">→</span></a>
+      </div>
+      <div class="sd-cap" data-sd-cap hidden>
+        <p class="sd-n">Path</p>
+        <h3 class="sd-h">Scrub, don't play.</h3>
+        <p class="sd-d">Nothing runs on a clock. The same scroll position always draws the same frame, forwards or backwards.</p>
+        <a class="sd-cta" href="#reel-path">Watch the reel <span aria-hidden="true">→</span></a>
+      </div>
+      <div class="sd-cap" data-sd-cap hidden>
+        <p class="sd-n">Stack</p>
+        <h3 class="sd-h">Faces on a cylinder, rotateX by p.</h3>
+        <p class="sd-d">A smoothstep inside each step makes the drum dwell on a face, then roll to the next one.</p>
+        <a class="sd-cta" href="#reel-stack">Watch the reel <span aria-hidden="true">→</span></a>
+      </div>
+      <div class="sd-cap" data-sd-cap hidden>
+        <p class="sd-n">Wave</p>
+        <h3 class="sd-h">Links, buttons, keys and drag.</h3>
+        <p class="sd-d">Faces are links. The rail and the arrows jump by scrolling the page, so the scroll and the drum never disagree.</p>
+        <a class="sd-cta" href="#reel-wave">Watch the reel <span aria-hidden="true">→</span></a>
+      </div>
+      <div class="sd-cap" data-sd-cap hidden>
+        <p class="sd-n">Close</p>
+        <h3 class="sd-h">Never pin input. Honour reduced motion.</h3>
+        <p class="sd-d">The page always scrolls normally. The loop idles when nothing moves, and reduced motion gets each face without the roll.</p>
+        <a class="sd-cta" href="#reel-close">Watch the reel <span aria-hidden="true">→</span></a>
+      </div>
+      <div class="sd-nav">
+        <button type="button" data-sd-prev aria-label="Previous chapter">‹</button>
+        <button type="button" data-sd-next aria-label="Next chapter">›</button>
+        <span class="sd-tip">scroll, drag or use the arrow keys</span>
+      </div>
+    </div>
+    <div class="sd-viewport" tabindex="0" aria-label="Story drum. Arrow keys change chapter.">
+      <div class="sd-ring">
+        <a class="sd-face" href="#reel-orbit" data-reel="orbit"><span class="sd-face-art"><canvas aria-hidden="true"></canvas></span><span class="sd-face-meta"><span class="sd-face-n">01</span><span class="sd-face-t">Orbit</span><span class="sd-face-go" aria-hidden="true">↗</span></span></a>
+        <a class="sd-face" href="#reel-path" data-reel="path"><span class="sd-face-art"><canvas aria-hidden="true"></canvas></span><span class="sd-face-meta"><span class="sd-face-n">02</span><span class="sd-face-t">Path</span><span class="sd-face-go" aria-hidden="true">↗</span></span></a>
+        <a class="sd-face" href="#reel-stack" data-reel="stack"><span class="sd-face-art"><canvas aria-hidden="true"></canvas></span><span class="sd-face-meta"><span class="sd-face-n">03</span><span class="sd-face-t">Stack</span><span class="sd-face-go" aria-hidden="true">↗</span></span></a>
+        <a class="sd-face" href="#reel-wave" data-reel="wave"><span class="sd-face-art"><canvas aria-hidden="true"></canvas></span><span class="sd-face-meta"><span class="sd-face-n">04</span><span class="sd-face-t">Wave</span><span class="sd-face-go" aria-hidden="true">↗</span></span></a>
+        <a class="sd-face" href="#reel-close" data-reel="close"><span class="sd-face-art"><canvas aria-hidden="true"></canvas></span><span class="sd-face-meta"><span class="sd-face-n">05</span><span class="sd-face-t">Close</span><span class="sd-face-go" aria-hidden="true">↗</span></span></a>
+      </div>
+    </div>
+    <ol class="sd-rail" aria-label="Chapters">
+      <i aria-hidden="true"><i data-sd-bar></i></i>
+      <li><button type="button" data-sd-go="0">Orbit</button></li>
+      <li><button type="button" data-sd-go="1">Path</button></li>
+      <li><button type="button" data-sd-go="2">Stack</button></li>
+      <li><button type="button" data-sd-go="3">Wave</button></li>
+      <li><button type="button" data-sd-go="4">Close</button></li>
+    </ol>
+  </div>
+</section>
+
+<section class="wrap outro">
+  <p class="eyebrow">The contract</p>
+  <h2>Six rules this page keeps.</h2>
+  <ul class="rules">
+    <li><b>Scroll is the clock.</b>p in [0, 1] comes from the pinned track. Nothing animates on a timer.</li>
+    <li><b>Reels are pure.</b>draw(ctx, t, env) has no state and no randomness, so it scrubs both ways.</li>
+    <li><b>Words live in the DOM.</b>Captions are real text, measured every frame; the canvas lays out around them and is clipped as a safety net.</li>
+    <li><b>Never pin input.</b>No wheel, touch or key capture. Controls seek by scrolling the page.</li>
+    <li><b>Idle costs nothing.</b>The loop stops when p settles and when the section leaves the viewport.</li>
+    <li><b>Reduced motion.</b>No smoothing, no in-between drum roll, no caption animation. The content is all still there.</li>
+  </ul>
+  <div class="row">
+    <a class="btn btn-solid" href="#film">Watch it again</a>
+    <a class="btn" href="#">Back to the top</a>
+  </div>
+</section>
+
+<footer class="wrap">scroll-motion-graphics v1.0.0 · ImuTechz · MIT. View source: everything is in this one file.</footer>
+
+<script>
+/*! scroll-motion.js v1.0.0 · ImuTechz · MIT
+ *
+ * The engine behind scroll motion graphics: scroll position becomes a
+ * progress value p in [0, 1], and every frame is a pure function of p.
+ *
+ *   ScrollMotion.scrub(el, onFrame, opts)   p for one element (useScrub, vanilla)
+ *   ScrollMotion.film(opts)                 a pinned canvas film made of reels
+ *   ScrollMotion.drum(root, opts)           an interactive 3D story drum
+ *   ScrollMotion.scrollToProgress(el, p)    seek by scrolling the page
+ *   ScrollMotion.*                          small math + drawing helpers
+ *
+ * Rules the engine keeps for you:
+ *   - it never captures wheel, touch or keys and never pins the body;
+ *     normal scrolling always moves the page
+ *   - the rAF loop runs only while p is changing and the element is near
+ *     the viewport; an idle page costs nothing
+ *   - prefers-reduced-motion: no smoothing, no in-between drum rotation
+ *
+ * Zero dependencies. Works as a classic <script> (window.ScrollMotion),
+ * as CommonJS, or through a bundler's CommonJS interop (import X from).
+ */
+(function (root, factory) {
+  if (typeof module === "object" && module.exports) module.exports = factory();
+  else root.ScrollMotion = factory();
+})(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  /* ───────────────────────── math ───────────────────────── */
+
+  const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  /* local progress of p inside the window [a, b] */
+  const seg = (p, a, b) => clamp01((p - a) / (b - a || 1));
+  const smoothstep = (t) => { t = clamp01(t); return t * t * (3 - 2 * t); };
+  const ease = {
+    linear: (t) => t,
+    inOut: smoothstep,
+    outCubic: (t) => 1 - Math.pow(1 - clamp01(t), 3),
+    inOutCubic: (t) => { t = clamp01(t); return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; },
+    outBack: (t) => { t = clamp01(t); const c = 1.70158, c3 = c + 1; return 1 + c3 * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); },
+    outExpo: (t) => (t >= 1 ? 1 : 1 - Math.pow(2, -10 * clamp01(t))),
+  };
+  /* staggered local progress for item i of n: item i starts at i*gap */
+  const stagger = (t, i, n, span = 0.5) => {
+    const gap = n > 1 ? (1 - span) / (n - 1) : 0;
+    return clamp01((t - i * gap) / span);
+  };
+  /* a deterministic pseudo-random number in [0, 1) — never Math.random in a reel */
+  const hash = (i, s = 0) => { const x = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return x - Math.floor(x); };
+  const prefersReduced = () =>
+    typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ─────────────────────── colours ──────────────────────── */
+
+  /* "#f2661a" | "rgb(…)" → [r, g, b] */
+  function parseColor(c, fallback = [28, 25, 20]) {
+    c = String(c || "").trim();
+    let m = /^#([0-9a-f]{3})$/i.exec(c);
+    if (m) return m[1].split("").map((h) => parseInt(h + h, 16));
+    m = /^#([0-9a-f]{6})$/i.exec(c);
+    if (m) return [0, 2, 4].map((k) => parseInt(m[1].slice(k, k + 2), 16));
+    m = /^rgba?\(([^)]+)\)$/i.exec(c);
+    if (m) return m[1].split(/[ ,/]+/).slice(0, 3).map(Number);
+    return fallback;
+  }
+  const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+  const mix = (c1, c2, t) => [0, 1, 2].map((k) => Math.round(lerp(c1[k], c2[k], t)));
+
+  /* the canvas palette comes from CSS custom properties on `el`, so light
+     and dark mode are one stylesheet change, never a second code path */
+  function readPalette(el) {
+    const cs = getComputedStyle(el);
+    const v = (name, fb) => parseColor(cs.getPropertyValue(name), fb);
+    return {
+      ink: v("--sm-ink", [28, 25, 20]),
+      dim: v("--sm-dim", [138, 130, 119]),
+      bg: v("--sm-bg", [243, 237, 226]),
+      surface: v("--sm-surface", [251, 248, 242]),
+      accent: v("--sm-accent", [242, 102, 26]),
+      accent2: v("--sm-accent-2", [217, 72, 30]),
+      cool: v("--sm-cool", [46, 108, 150]),
+    };
+  }
+
+  /* ─────────────────────── geometry ─────────────────────── */
+
+  /* Catmull-Rom through `pts`, sampled by arc length:
+     returns { samples: [[x, y, len]], at: [len of each node], total } */
+  function route(pts, perSeg = 40) {
+    const n = pts.length, samples = [], at = [];
+    let total = 0;
+    if (!n) return { samples, at, total };
+    const P = (i) => pts[clamp(i, 0, n - 1)];
+    for (let i = 0; i < n - 1; i++) {
+      const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+      for (let s = 0; s < perSeg; s++) {
+        const t = s / perSeg, t2 = t * t, t3 = t2 * t;
+        const x = 0.5 * (2 * p1[0] + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3);
+        const y = 0.5 * (2 * p1[1] + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3);
+        if (samples.length) { const q = samples[samples.length - 1]; total += Math.hypot(x - q[0], y - q[1]); }
+        if (s === 0) at[i] = total;
+        samples.push([x, y, total]);
+      }
+    }
+    const last = pts[n - 1], q = samples[samples.length - 1];
+    if (q) total += Math.hypot(last[0] - q[0], last[1] - q[1]);
+    samples.push([last[0], last[1], total]);
+    at[n - 1] = total;
+    return { samples, at, total };
+  }
+
+  /* stroke the first L pixels of a sampled route; returns the head point */
+  function strokeTo(ctx, samples, L) {
+    let head = samples[0];
+    ctx.beginPath();
+    for (let k = 0; k < samples.length; k++) {
+      const s = samples[k];
+      if (s[2] > L) {
+        const a = samples[k - 1] || s, f = (L - a[2]) / Math.max(1e-6, s[2] - a[2]);
+        head = [a[0] + (s[0] - a[0]) * f, a[1] + (s[1] - a[1]) * f];
+        ctx.lineTo(head[0], head[1]);
+        break;
+      }
+      head = s;
+      k ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]);
+    }
+    ctx.stroke();
+    return head;
+  }
+
+  /* ───────────── keep-outs: where the drawing may not go ───────────── */
+
+  /* el's layout box relative to `stage`, ignoring transforms (so a caption
+     that is mid-fade still reserves its resting place) */
+  function boxIn(el, stage) {
+    let x = 0, y = 0, n = el;
+    while (n && n !== stage) { x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent; }
+    if (n !== stage) { // stage is not an offsetParent: fall back to rects
+      const a = el.getBoundingClientRect(), b = stage.getBoundingClientRect();
+      return { x: a.left - b.left, y: a.top - b.top, w: a.width, h: a.height };
+    }
+    return { x, y, w: el.offsetWidth, h: el.offsetHeight };
+  }
+  const pad = (r, d) => ({ x: r.x - d, y: r.y - d, w: r.w + 2 * d, h: r.h + 2 * d });
+  const hits = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+  /* the largest rectangle of [0,0,W,H] that misses every keep-out:
+     cut the free area around each keep-out in turn, keeping the side with
+     the best area (thin slivers are penalised) */
+  function freeRect(W, H, keeps, margin = 0) {
+    let F = { x: 0, y: 0, w: W, h: H };
+    const score = (r) => (r.w <= 0 || r.h <= 0 ? -1 : r.w * r.h * Math.pow(Math.min(r.w, r.h) / Math.max(r.w, r.h), 0.35));
+    const list = keeps.filter((k) => k.w > 0 && k.h > 0).sort((a, b) => b.w * b.h - a.w * a.h);
+    for (const k of list) {
+      if (!hits(F, k)) continue;
+      const cands = [
+        { x: F.x, y: F.y, w: k.x - F.x, h: F.h },                          // left of it
+        { x: k.x + k.w, y: F.y, w: F.x + F.w - (k.x + k.w), h: F.h },      // right of it
+        { x: F.x, y: F.y, w: F.w, h: k.y - F.y },                          // above it
+        { x: F.x, y: k.y + k.h, w: F.w, h: F.y + F.h - (k.y + k.h) },      // below it
+      ];
+      F = cands.reduce((best, c) => (score(c) > score(best) ? c : best), cands[0]);
+    }
+    return { x: F.x + margin, y: F.y + margin, w: Math.max(0, F.w - 2 * margin), h: Math.max(0, F.h - 2 * margin) };
+  }
+
+  /* true when a circle at (x, y, r) touches a keep-out */
+  const blocked = (keeps, x, y, r = 0) => keeps.some((k) => x + r > k.x && x - r < k.x + k.w && y + r > k.y && y - r < k.y + k.h);
+
+  /* ─────────────────────── scrub ─────────────────────── */
+
+  /* p for one element.
+     mode "pin":  el is a tall track whose child (opts.stage, or a 100vh
+                  viewport) is position: sticky; p = 0 when the track's top
+                  reaches the viewport top, 1 when its bottom does.
+     mode "view": p = how far el has travelled through the viewport.
+     onFrame(p) runs only while p changes; then the loop stops. */
+  function progressOf(el, mode, stage) {
+    const r = el.getBoundingClientRect();
+    const vh = window.innerHeight || 1;
+    if (mode === "pin") {
+      const span = el.offsetHeight - (stage ? stage.offsetHeight : vh);
+      return span > 4 ? clamp01(-r.top / span) : clamp01(-r.top / vh);
+    }
+    return clamp01((vh - r.top) / (vh + r.height));
+  }
+
+  function scrub(el, onFrame, opts = {}) {
+    const { mode = "pin", smooth = 0.18, stage = null, rootMargin = "25% 0px" } = opts;
+    const reduce = opts.reduce != null ? opts.reduce : prefersReduced();
+    let target = 0, cur = -1, raf = 0, on = false, dead = false;
+    const measure = () => { target = progressOf(el, mode, stage); };
+    function tick() {
+      raf = 0;
+      if (!on || dead) return;
+      measure();
+      const d = target - cur;
+      cur = cur < 0 || reduce || Math.abs(d) < 0.0005 ? target : cur + d * smooth;
+      onFrame(cur);
+      if (cur !== target) raf = requestAnimationFrame(tick);
+    }
+    const kick = () => { if (on && !raf && !dead) raf = requestAnimationFrame(tick); };
+    const io = new IntersectionObserver((es) => {
+      const vis = es[es.length - 1].isIntersecting;
+      if (vis && !on) { on = true; kick(); }
+      else if (!vis && on) { on = false; if (raf) cancelAnimationFrame(raf); raf = 0; }
+    }, { rootMargin });
+    io.observe(el);
+    addEventListener("scroll", kick, { passive: true });
+    addEventListener("resize", kick);
+    measure(); cur = target; onFrame(cur);
+    return {
+      kick,
+      get p() { return cur; },
+      stop() {
+        dead = true; on = false; if (raf) cancelAnimationFrame(raf); raf = 0;
+        io.disconnect();
+        removeEventListener("scroll", kick);
+        removeEventListener("resize", kick);
+      },
+    };
+  }
+
+  /* seek: scroll the page so a pinned track sits at progress p. Seeking is
+     always done by scrolling, so the scroll position stays the one truth. */
+  function scrollToProgress(el, p, opts = {}) {
+    const stage = opts.stage || null;
+    const top = el.getBoundingClientRect().top + window.scrollY;
+    const run = el.offsetHeight - (stage ? stage.offsetHeight : window.innerHeight);
+    const smooth = opts.smooth != null ? opts.smooth : !prefersReduced();
+    window.scrollTo({ top: Math.round(top + run * clamp01(p)) + (opts.nudge || 0), behavior: smooth ? "smooth" : "instant" });
+    // "instant", not "auto": auto obeys a page's CSS scroll-behavior: smooth
+  }
+
+  /* ─────────────────────── film ─────────────────────── */
+
+  /* A pinned canvas film. Each reel owns an equal slice of p.
+       reels:    [{ name, draw(ctx, t, env) }]   t ∈ [0,1] local progress
+       captions: [element | null]              one per reel (DOM, data-keep)
+     env = { W, H, mobile, colors, keep, free, alpha, p, index, reduce }
+     A reel must be a pure function of (t, env): no state, no clock. */
+  function film(opts) {
+    const { track, stage, canvas, reels, captions = [], smooth = 0.14, dprMax = 2, onChange } = opts;
+    const cross = opts.cross != null ? opts.cross : 0.12; // reel crossfade half-width, in reel units
+    const capFade = opts.capFade != null ? opts.capFade : 0.1; // caption fade length, in reel units
+    const keepPad = opts.keepPad != null ? opts.keepPad : 14;
+    const ctx = canvas.getContext("2d");
+    const n = reels.length;
+    const reduce = opts.reduce != null ? opts.reduce : prefersReduced();
+    const fixedKeeps = Array.from(stage.querySelectorAll("[data-keep]")).filter((el) => !captions.includes(el));
+    const bar = stage.querySelector("[data-sm-bar]");
+    const count = stage.querySelector("[data-sm-count]");
+    let W = 0, H = 0, dpr = 1, colors = readPalette(stage), active = -1, painted = -1;
+    let lastKeeps = [];
+
+    function layout() {
+      const r = stage.getBoundingClientRect();
+      W = r.width; H = r.height;
+      dpr = Math.min(window.devicePixelRatio || 1, dprMax);
+      canvas.width = Math.max(1, Math.round(W * dpr));
+      canvas.height = Math.max(1, Math.round(H * dpr));
+      canvas.style.width = W + "px"; canvas.style.height = H + "px";
+      colors = readPalette(stage);
+      painted = -1;
+    }
+
+    /* the timeline, all pure functions of p */
+    const local = (p, i) => p * n - i; // unclamped reel units: 0..1 is reel i's own slice
+    function reelAlpha(p, i) {
+      const u = local(p, i);
+      const fin = i === 0 ? 1 : smoothstep((u + cross) / (2 * cross));
+      const fout = i === n - 1 ? 1 : smoothstep((1 + cross - u) / (2 * cross));
+      return Math.min(fin, fout);
+    }
+    /* captions sit inside their reel and leave a gap of 2*cross between
+       neighbours, so two captions are never on screen at once */
+    function capAlpha(p, i) {
+      const u = local(p, i);
+      const fin = i === 0 ? 1 : seg(u, cross, cross + capFade);
+      const fout = i === n - 1 ? 1 : 1 - seg(u, 1 - cross - capFade, 1 - cross);
+      return Math.min(fin, fout);
+    }
+
+    function paint(p) {
+      // 1. writes: captions and HUD, all derived from p
+      const caps = [];
+      for (let i = 0; i < n; i++) {
+        const el = captions[i];
+        if (!el) continue;
+        const a = capAlpha(p, i);
+        caps[i] = a;
+        el.style.opacity = a.toFixed(3);
+        el.style.transform = reduce ? "none" : `translate3d(0, ${((1 - a) * 14).toFixed(1)}px, 0)`;
+        el.style.visibility = a > 0.001 ? "visible" : "hidden";
+      }
+      if (bar) bar.style.transform = `scaleX(${p.toFixed(4)})`;
+      const now = Math.min(n - 1, Math.floor(p * n));
+      if (now !== active) {
+        active = now;
+        if (count) count.textContent = String(now + 1).padStart(2, "0") + " / " + String(n).padStart(2, "0");
+        if (onChange) onChange(now, reels[now]);
+      }
+
+      // 2. reads: measure every keep-out this frame (one layout, if any)
+      const fixed = fixedKeeps.filter((el) => el.offsetParent).map((el) => pad(boxIn(el, stage), keepPad));
+      const own = captions.map((el) => (el && el.offsetParent ? pad(boxIn(el, stage), keepPad) : null));
+      const visibleCaps = own.filter((r, i) => r && caps[i] > 0.001);
+      lastKeeps = fixed.concat(visibleCaps);
+
+      // 3. draw: clear, clip out every visible keep-out, then the reels
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H);
+      for (const k of lastKeeps) ctx.rect(k.x, k.y, k.w, k.h);
+      ctx.clip("evenodd"); // safety net: nothing can paint under a caption
+      const mobile = W < 760;
+      for (let i = 0; i < n; i++) {
+        const alpha = reelAlpha(p, i);
+        if (alpha <= 0.001) continue;
+        const keep = fixed.concat(own[i] ? [own[i]] : [], visibleCaps);
+        const env = {
+          W, H, dpr, mobile, colors, keep, reduce, alpha, p, index: i,
+          free: freeRect(W, H, keep, mobile ? 12 : 28),
+        };
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        reels[i].draw(ctx, clamp01(local(p, i)), env);
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    let target = 0, cur = 0, raf = 0, on = false;
+    const measure = () => { target = progressOf(track, "pin", stage); };
+    function tick() {
+      raf = 0;
+      if (!on) return;
+      measure();
+      const d = target - cur;
+      cur = reduce || Math.abs(d) < 0.0005 ? target : cur + d * smooth;
+      if (cur !== painted) { painted = cur; paint(cur); raf = requestAnimationFrame(tick); }
+    }
+    const kick = () => { if (on && !raf) raf = requestAnimationFrame(tick); };
+    const io = new IntersectionObserver((es) => {
+      const vis = es[es.length - 1].isIntersecting;
+      if (vis && !on) { on = true; measure(); cur = target; painted = -1; kick(); }
+      else if (!vis && on) { on = false; if (raf) cancelAnimationFrame(raf); raf = 0; }
+    }, { rootMargin: "40% 0px" });
+    io.observe(track);
+    const ro = new ResizeObserver(() => { layout(); paint(cur); painted = cur; });
+    ro.observe(stage);
+    const mq = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
+    const retheme = () => { colors = readPalette(stage); paint(cur); };
+    if (mq && mq.addEventListener) mq.addEventListener("change", retheme);
+    addEventListener("scroll", kick, { passive: true });
+    addEventListener("resize", kick);
+
+    layout(); measure(); cur = target; paint(cur); painted = cur;
+
+    return {
+      get p() { return cur; },
+      get keeps() { return lastKeeps.slice(); },
+      /* paint an arbitrary p without scrolling (tests, posters) */
+      renderAt(p) { paint(clamp01(p)); painted = -1; },
+      seek(p) { scrollToProgress(track, p, { stage }); },
+      seekReel(i, at = 0.5) { scrollToProgress(track, (clamp(i, 0, n - 1) + at) / n, { stage }); },
+      retheme,
+      destroy() {
+        on = false; if (raf) cancelAnimationFrame(raf);
+        io.disconnect(); ro.disconnect();
+        if (mq && mq.removeEventListener) mq.removeEventListener("change", retheme);
+        removeEventListener("scroll", kick);
+        removeEventListener("resize", kick);
+      },
+    };
+  }
+
+  /* ─────────────────────── drum ─────────────────────── */
+
+  /* An interactive story drum. Markup (see demo.html / scroll-motion.css):
+       .sd (tall track)  > .sd-stage (sticky)
+         [data-sd-cap] × n      captions, one per chapter
+         .sd-viewport > .sd-ring > a.sd-face × n   faces are links
+         [data-sd-go="i"]       rail buttons      [data-sd-prev] [data-sd-next]
+         [data-sd-bar]          rail progress     [data-sd-count]
+     Rotation is a pure function of scroll. Every control seeks by
+     scrolling the page, so the scroll and the drum never disagree. */
+  function drum(root, opts = {}) {
+    const stage = root.querySelector(".sd-stage") || null;
+    const vp = root.querySelector(".sd-viewport");
+    const ring = root.querySelector(".sd-ring");
+    const faces = Array.from(root.querySelectorAll(".sd-face"));
+    const caps = Array.from(root.querySelectorAll("[data-sd-cap]"));
+    const rail = Array.from(root.querySelectorAll("[data-sd-go]"));
+    const prev = root.querySelector("[data-sd-prev]");
+    const next = root.querySelector("[data-sd-next]");
+    const bar = root.querySelector("[data-sd-bar]");
+    const count = root.querySelector("[data-sd-count]");
+    const n = faces.length, step = 360 / n;
+    const reduce = opts.reduce != null ? opts.reduce : prefersReduced();
+    let idx = -1;
+
+    faces.forEach((f, i) => { f.style.transform = `rotateX(${-i * step}deg) translateZ(var(--r))`; f.draggable = false; });
+
+    function show(i) {
+      if (i === idx) return;
+      idx = i;
+      faces.forEach((f, k) => {
+        const on = k === i;
+        f.classList.toggle("on", on);
+        f.tabIndex = on ? 0 : -1;               // only the face you see is in the tab order
+        f.setAttribute("aria-hidden", on ? "false" : "true");
+      });
+      caps.forEach((c, k) => { c.hidden = k !== i; });
+      rail.forEach((b, k) => {
+        const li = b.closest("li") || b;
+        li.classList.toggle("on", k === i);
+        li.classList.toggle("done", k < i);
+        if (k === i) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
+      });
+      if (prev) prev.disabled = i === 0;
+      if (next) next.disabled = i === n - 1;
+      if (count) count.textContent = String(i + 1).padStart(2, "0") + " / " + String(n).padStart(2, "0");
+      if (opts.onChange) opts.onChange(i);
+    }
+
+    const s = scrub(root, (p) => {
+      const f = clamp01(p) * (n - 1);
+      const base = Math.floor(f), t = f - base;
+      // dwell: a smoothstep inside every step parks the drum on a face, then rolls
+      const turn = reduce ? Math.round(f) : base + t * t * (3 - 2 * t);
+      ring.style.transform = `translateZ(calc(var(--r) * -1)) rotateX(${(turn * step).toFixed(3)}deg)`;
+      show(Math.min(n - 1, Math.round(f)));
+      if (bar) bar.style.transform = `scaleY(${clamp01(p).toFixed(4)})`;
+    }, { stage, smooth: opts.smooth || 0.18, reduce });
+
+    const go = (i) => scrollToProgress(root, clamp(i, 0, n - 1) / (n - 1), { stage, nudge: 1 });
+
+    const onRail = (e) => { const b = e.target.closest("[data-sd-go]"); if (b) go(+b.dataset.sdGo); };
+    const onPrev = () => go(idx - 1), onNext = () => go(idx + 1);
+    const onKey = (e) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); go(idx + 1); }
+      else if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); go(idx - 1); }
+      else if (e.key === "Home") { e.preventDefault(); go(0); }
+      else if (e.key === "End") { e.preventDefault(); go(n - 1); }
+    };
+    root.addEventListener("click", onRail);
+    if (prev) prev.addEventListener("click", onPrev);
+    if (next) next.addEventListener("click", onNext);
+    vp.addEventListener("keydown", onKey);
+
+    /* drag with a mouse or pen: a vertical drag scrolls the page (touch
+       already scrolls natively, so it is left alone) */
+    let drag = null;
+    const swallow = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+    const down = (e) => {
+      if (e.button !== 0 || e.pointerType === "touch") return;
+      drag = { y: e.clientY, s: window.scrollY, moved: false };
+    };
+    const move = (e) => {
+      if (!drag) return;
+      const dy = e.clientY - drag.y;
+      if (Math.abs(dy) > 4) { drag.moved = true; vp.classList.add("dragging"); }
+      // instant: with CSS scroll-behavior: smooth every move would start a new smooth scroll
+      if (drag.moved) window.scrollTo({ top: drag.s - dy * (opts.dragGain || 3.2), behavior: "instant" });
+    };
+    const up = () => {
+      const d = drag; drag = null;
+      vp.classList.remove("dragging");
+      if (d && d.moved) {
+        // let go on the face nearest the scroll position now (not the last
+        // painted one, which can be a frame behind)
+        go(Math.round(progressOf(root, "pin", stage) * (n - 1)));
+        vp.addEventListener("click", swallow, { capture: true, once: true }); // the click that ends a drag is not a click
+        setTimeout(() => vp.removeEventListener("click", swallow, { capture: true }), 50);
+      }
+    };
+    vp.addEventListener("pointerdown", down);
+    addEventListener("pointermove", move, { passive: true });
+    addEventListener("pointerup", up);
+
+    return {
+      go,
+      get index() { return idx; },
+      destroy() {
+        s.stop();
+        root.removeEventListener("click", onRail);
+        if (prev) prev.removeEventListener("click", onPrev);
+        if (next) next.removeEventListener("click", onNext);
+        vp.removeEventListener("keydown", onKey);
+        vp.removeEventListener("pointerdown", down);
+        removeEventListener("pointermove", move);
+        removeEventListener("pointerup", up);
+      },
+    };
+  }
+
+  return {
+    version: "1.0.0",
+    // math
+    clamp, clamp01, lerp, seg, smoothstep, ease, stagger, hash, prefersReduced,
+    // colour
+    parseColor, rgba, mix, readPalette,
+    // geometry + layout
+    route, strokeTo, boxIn, pad, hits, freeRect, blocked,
+    // engines
+    progressOf, scrub, scrollToProgress, film, drum,
+  };
+});
+</script>
+<script>
+/*! reels.js v1.0.0 · ImuTechz · MIT
+ *
+ * Five example reels for ScrollMotion.film(). Each reel is
+ *   { name, draw(ctx, t, env) }
+ * and is a pure function of its local progress t ∈ [0, 1] and env:
+ * no state between frames, no clock, no Math.random. Scroll back and
+ * the reel plays backwards, frame for frame.
+ *
+ * Every reel lays itself out inside env.free — the largest rectangle
+ * that misses every caption and HUD — so the drawing never needs to
+ * be clipped (the engine clips anyway, as a safety net).
+ *
+ *   orbit  — one timeline, many moving parts
+ *   path   — a route that draws (and un-draws) with the scroll
+ *   stack  — staggered bars that build and settle
+ *   wave   — phase from p, rhythm without a clock
+ *   close  — scattered particles resolve onto one mark
+ */
+(function (root, factory) {
+  if (typeof module === "object" && module.exports) module.exports = factory(require("./scroll-motion.js"));
+  else root.ScrollReels = factory(root.ScrollMotion);
+})(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : this, function (SM) {
+  "use strict";
+  const { clamp01, lerp, seg, smoothstep, ease, stagger, hash, rgba, mix, route, strokeTo } = SM;
+  const TAU = Math.PI * 2;
+  const mono = (px) => `500 ${px}px ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace`;
+
+  /* ── 1. orbit ─────────────────────────────────────────── */
+  const orbit = {
+    name: "orbit",
+    draw(ctx, t, env) {
+      const { free: F, colors: C } = env;
+      const cx = F.x + F.w / 2, cy = F.y + F.h / 2;
+      const R = Math.min(F.w, F.h) * 0.46;
+      if (R < 8) return;
+      const grow = ease.outCubic(seg(t, 0, 0.3));
+      const tilt = lerp(1, 0.36, ease.inOut(seg(t, 0.15, 0.85)));
+      const rings = [{ r: 0.42, m: 5 }, { r: 0.7, m: 8 }, { r: 0.98, m: 12 }];
+
+      // rings, back halves first
+      rings.forEach((ring, k) => {
+        const r = R * ring.r * lerp(0.6, 1, ease.outCubic(seg(t, 0.05 + k * 0.08, 0.45 + k * 0.08)));
+        ctx.strokeStyle = rgba(C.ink, 0.14);
+        ctx.lineWidth = 1;
+        ctx.setLineDash(k === 2 ? [2, 7] : []);
+        ctx.beginPath(); ctx.ellipse(cx, cy, r, r * tilt, 0, 0, TAU); ctx.stroke();
+      });
+      ctx.setLineDash([]);
+
+      // satellites, depth-sorted
+      const sats = [];
+      rings.forEach((ring, k) => {
+        const r = R * ring.r;
+        for (let j = 0; j < ring.m; j++) {
+          const a = (j / ring.m) * TAU + t * Math.PI * (k % 2 ? -1 : 1) * (1 + k * 0.35) + k;
+          const z = Math.sin(a);
+          const on = ease.outBack(stagger(seg(t, 0.08, 0.7), j + k * 4, 12 + 8, 0.3));
+          sats.push({ x: cx + Math.cos(a) * r, y: cy + z * r * tilt, z, k, on });
+        }
+      });
+      sats.sort((a, b) => a.z - b.z);
+
+      // spokes appear in the second half
+      const spokes = seg(t, 0.45, 0.8);
+      if (spokes > 0) {
+        ctx.lineWidth = 1;
+        for (const s of sats) {
+          if (s.k !== 1) continue;
+          ctx.strokeStyle = rgba(C.accent, 0.28 * spokes * (0.5 + 0.5 * (s.z + 1) / 2));
+          ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(lerp(cx, s.x, spokes), lerp(cy, s.y, spokes)); ctx.stroke();
+        }
+      }
+
+      for (const s of sats) {
+        if (s.on <= 0) continue;
+        const depth = (s.z + 1) / 2;
+        const size = lerp(2.2, 5.5, depth) * s.on * (R > 120 ? 1 : 0.7);
+        ctx.fillStyle = s.k === 1 ? rgba(C.accent, lerp(0.45, 1, depth)) : rgba(C.ink, lerp(0.25, 0.8, depth));
+        ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(0, size), 0, TAU); ctx.fill();
+      }
+
+      // the core, with a halo
+      const cr = R * 0.13 * grow;
+      const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, cr * 3.2 + 1);
+      halo.addColorStop(0, rgba(C.accent, 0.35)); halo.addColorStop(1, rgba(C.accent, 0));
+      ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(cx, cy, cr * 3.2 + 1, 0, TAU); ctx.fill();
+      ctx.fillStyle = rgba(C.accent2, 1); ctx.beginPath(); ctx.arc(cx, cy, cr, 0, TAU); ctx.fill();
+      ctx.fillStyle = rgba(C.surface, 1); ctx.beginPath(); ctx.arc(cx, cy, cr * 0.36, 0, TAU); ctx.fill();
+
+      if (R > 90) {
+        ctx.font = mono(11); ctx.textAlign = "center"; ctx.fillStyle = rgba(C.ink, 0.5);
+        ctx.fillText("p " + env.p.toFixed(2), cx, cy + R * tilt + 26);
+      }
+    },
+  };
+
+  /* ── 2. path ──────────────────────────────────────────── */
+  const STEPS = ["pin", "measure", "draw", "caption", "drum", "verify", "ship"];
+  const path = {
+    name: "path",
+    draw(ctx, t, env) {
+      const { free: F, colors: C } = env;
+      if (F.w < 40 || F.h < 40) return;
+      const n = STEPS.length, tall = F.h > F.w * 1.05;
+      const nodes = [];
+      for (let i = 0; i < n; i++) {
+        const u = i / (n - 1);
+        nodes.push(tall
+          ? [F.x + F.w * (0.5 + Math.sin(u * Math.PI * 3.2) * 0.34), F.y + F.h * (0.06 + u * 0.88)]
+          : [F.x + F.w * (0.04 + u * 0.92), F.y + 30 + (F.h - 74) * (0.5 + Math.sin(u * Math.PI * 2.4 + 0.4) * 0.5)]);
+      }
+      const { samples, at, total } = route(nodes);
+      const L = seg(t, 0.04, 0.92) * total; // a lead-in and a hold so the ends get screen time
+
+      // the route ahead: a faint dotted preview
+      ctx.setLineDash([2, 9]); ctx.lineCap = "round"; ctx.lineWidth = 2;
+      ctx.strokeStyle = rgba(C.ink, 0.18);
+      ctx.beginPath(); samples.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // the route travelled
+      let head = samples[0];
+      if (L > 0) {
+        const g = ctx.createLinearGradient(nodes[0][0], nodes[0][1], nodes[n - 1][0], nodes[n - 1][1]);
+        g.addColorStop(0, rgba(C.accent2)); g.addColorStop(1, rgba(C.accent));
+        ctx.strokeStyle = g; ctx.lineWidth = env.mobile ? 3 : 4;
+        head = strokeTo(ctx, samples, L);
+      }
+
+      // milestones pop with an overshoot as the head reaches them
+      ctx.textAlign = "center";
+      ctx.font = mono(env.mobile ? 10.5 : 12);
+      for (let i = 0; i < n; i++) {
+        const [x, y] = nodes[i];
+        const reach = clamp01((L - at[i] + total * 0.012) / (total * 0.04));
+        if (reach <= 0) {
+          ctx.fillStyle = rgba(C.bg); ctx.strokeStyle = rgba(C.ink, 0.32); ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.arc(x, y, 5, 0, TAU); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = rgba(C.ink, 0.36);
+        } else {
+          const r = (env.mobile ? 8 : 11) * ease.outBack(reach);
+          ctx.fillStyle = rgba(C.accent, 0.16 * reach);
+          ctx.beginPath(); ctx.arc(x, y, r * 2.1, 0, TAU); ctx.fill();
+          ctx.fillStyle = rgba(C.accent2); ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+          ctx.fillStyle = rgba(C.surface); ctx.beginPath(); ctx.arc(x, y, r * 0.36, 0, TAU); ctx.fill();
+          ctx.fillStyle = rgba(C.ink, 0.5 + 0.4 * reach);
+        }
+        if (tall) { ctx.textAlign = x > F.x + F.w / 2 ? "right" : "left"; ctx.fillText(STEPS[i], x + (x > F.x + F.w / 2 ? -20 : 20), y + 4); }
+        else ctx.fillText(STEPS[i], x, y + (i % 2 === 0 ? 34 : -24));
+      }
+
+      // the head: a glow that leads the line (no pulse: frames are pure)
+      if (L > 0 && L < total) {
+        const gr = ctx.createRadialGradient(head[0], head[1], 0, head[0], head[1], 26);
+        gr.addColorStop(0, rgba(C.accent, 0.55)); gr.addColorStop(1, rgba(C.accent, 0));
+        ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(head[0], head[1], 26, 0, TAU); ctx.fill();
+        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(head[0], head[1], 3.2, 0, TAU); ctx.fill();
+      }
+    },
+  };
+
+  /* ── 3. stack ─────────────────────────────────────────── */
+  const stack = {
+    name: "stack",
+    draw(ctx, t, env) {
+      const { free: F, colors: C } = env;
+      if (F.w < 40 || F.h < 40) return;
+      const n = env.mobile || F.w < 420 ? 9 : 14;
+      const vals = Array.from({ length: n }, (_, i) => 0.22 + 0.68 * smoothstep(0.15 + 0.85 * ((i + 1) / n)) * (0.75 + 0.25 * hash(i, 3)));
+      const base = F.y + F.h * 0.9, top = F.y + F.h * 0.08, gap = F.w / n, bw = gap * 0.56;
+      const build = seg(t, 0, 0.72);
+
+      // grid
+      ctx.strokeStyle = rgba(C.ink, 0.08); ctx.lineWidth = 1;
+      for (let g = 0; g <= 4; g++) {
+        const y = lerp(base, top, g / 4);
+        ctx.beginPath(); ctx.moveTo(F.x, y); ctx.lineTo(F.x + F.w, y); ctx.stroke();
+      }
+      ctx.strokeStyle = rgba(C.ink, 0.35);
+      ctx.beginPath(); ctx.moveTo(F.x, base); ctx.lineTo(F.x + F.w, base); ctx.stroke();
+
+      // bars: each has its own window inside the reel, and lands with an ease
+      const tops = [];
+      let best = 0;
+      vals.forEach((v, i) => { if (v > vals[best]) best = i; });
+      for (let i = 0; i < n; i++) {
+        const k = ease.outCubic(stagger(build, i, n, 0.32));
+        const h = (base - top) * vals[i] * k;
+        const x = F.x + gap * i + (gap - bw) / 2;
+        const grd = ctx.createLinearGradient(0, base - h, 0, base);
+        const c = i === best ? C.accent : mix(C.ink, C.accent, i / (n - 1) * 0.55);
+        grd.addColorStop(0, rgba(c, i === best ? 1 : 0.85)); grd.addColorStop(1, rgba(c, i === best ? 0.75 : 0.35));
+        ctx.fillStyle = grd;
+        const rr = Math.min(6, bw / 2, h / 2);
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(x, base - h, bw, h, [rr, rr, 0, 0]); else ctx.rect(x, base - h, bw, h);
+        ctx.fill();
+        tops.push([x + bw / 2, base - h - 10]);
+      }
+
+      // a trend line through the tops, drawn once the bars have landed
+      const line = seg(t, 0.62, 0.96);
+      if (line > 0) {
+        const { samples, total } = route(tops, 16);
+        ctx.strokeStyle = rgba(C.accent2, 0.9); ctx.lineWidth = 2; ctx.setLineDash([]);
+        const head = strokeTo(ctx, samples, line * total);
+        ctx.fillStyle = rgba(C.accent2); ctx.beginPath(); ctx.arc(head[0], head[1], 4, 0, TAU); ctx.fill();
+      }
+
+      if (F.w > 260) {
+        ctx.font = mono(11); ctx.textAlign = "left"; ctx.fillStyle = rgba(C.ink, 0.5);
+        ctx.fillText(String(Math.round(build * 100)).padStart(3, " ") + "%", F.x, top - 10);
+      }
+    },
+  };
+
+  /* ── 4. wave ──────────────────────────────────────────── */
+  const wave = {
+    name: "wave",
+    draw(ctx, t, env) {
+      const { free: F, colors: C } = env;
+      if (F.w < 40 || F.h < 40) return;
+      const rows = env.mobile ? 9 : 13;
+      const ampMax = (F.h / rows) * 1.1; // rows are inset by the largest swing, so no crest leaves F
+      const amp0 = ampMax * lerp(0.25, 1, smoothstep(seg(t, 0, 0.35)));
+      const rowY = (r) => F.y + ampMax + (F.h - 2 * ampMax) * (r / (rows - 1));
+      const phase = t * TAU * 1.5;
+      const step = Math.max(3, F.w / 140);
+      ctx.lineWidth = env.mobile ? 1.4 : 1.8; ctx.lineCap = "round";
+      for (let r = 0; r < rows; r++) {
+        const y0 = rowY(r);
+        const c = mix(C.ink, C.accent, r / (rows - 1));
+        ctx.strokeStyle = rgba(c, lerp(0.25, 0.95, r / (rows - 1)));
+        ctx.beginPath();
+        for (let x = 0; x <= F.w + 0.5; x += step) {
+          const u = x / F.w;
+          const env1 = Math.sin(Math.PI * u);
+          const y = y0 + Math.sin(u * TAU * 1.6 + phase + r * 0.45) * amp0 * env1 * env1;
+          x ? ctx.lineTo(F.x + x, y) : ctx.moveTo(F.x + x, y);
+        }
+        ctx.stroke();
+      }
+      // a playhead that rides the middle row: position = t
+      const mid = Math.floor(rows / 2), u = lerp(0.04, 0.96, t);
+      const y0 = rowY(mid), e = Math.sin(Math.PI * u);
+      const hx = F.x + u * F.w, hy = y0 + Math.sin(u * TAU * 1.6 + phase + mid * 0.45) * amp0 * e * e;
+      ctx.strokeStyle = rgba(C.ink, 0.22); ctx.lineWidth = 1; ctx.setLineDash([3, 6]);
+      ctx.beginPath(); ctx.moveTo(hx, F.y); ctx.lineTo(hx, F.y + F.h); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = rgba(C.accent2); ctx.beginPath(); ctx.arc(hx, hy, 6, 0, TAU); ctx.fill();
+      ctx.fillStyle = rgba(C.surface); ctx.beginPath(); ctx.arc(hx, hy, 2.2, 0, TAU); ctx.fill();
+    },
+  };
+
+  /* ── 5. close ─────────────────────────────────────────── */
+  const close = {
+    name: "close",
+    draw(ctx, t, env) {
+      const { free: F, colors: C } = env;
+      if (F.w < 30 || F.h < 30) return;
+      const cx = F.x + F.w / 2, cy = F.y + F.h / 2, R = Math.min(F.w, F.h) * 0.4;
+      const M = env.mobile ? 110 : 160, outer = Math.round(M * 0.62);
+      const go = seg(t, 0, 0.8);
+      for (let i = 0; i < M; i++) {
+        // the mark: an outer ring and an inner hexagon (six aperture blades)
+        let tx, ty;
+        if (i < outer) {
+          const a = (i / outer) * TAU - Math.PI / 2;
+          tx = cx + Math.cos(a) * R; ty = cy + Math.sin(a) * R;
+        } else {
+          const k = i - outer, per = (M - outer) / 6, side = Math.floor(k / per), f = (k % per) / per;
+          const a0 = side * TAU / 6 - Math.PI / 2, a1 = a0 + TAU / 6, r = R * 0.52;
+          tx = cx + lerp(Math.cos(a0), Math.cos(a1), f) * r; ty = cy + lerp(Math.sin(a0), Math.sin(a1), f) * r;
+        }
+        const sx = F.x + hash(i, 1) * F.w, sy = F.y + hash(i, 2) * F.h;
+        const e = ease.inOutCubic(stagger(go, i % 40, 40, 0.6));
+        const bend = Math.sin(e * Math.PI) * 40 * (hash(i, 5) - 0.5);
+        const x = lerp(sx, tx, e) + bend, y = lerp(sy, ty, e) - bend;
+        const landed = e > 0.98;
+        ctx.fillStyle = landed ? rgba(i < outer ? C.ink : C.accent, 0.9) : rgba(C.ink, lerp(0.25, 0.6, e));
+        ctx.beginPath(); ctx.arc(x, y, landed ? 2.4 : lerp(1.4, 2.2, e), 0, TAU); ctx.fill();
+      }
+      // the mark resolves: ring stroke and a core, once everything lands
+      const fin = ease.outCubic(seg(t, 0.78, 1));
+      if (fin > 0) {
+        ctx.strokeStyle = rgba(C.accent, 0.7 * fin); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx, cy, R * 1.12, -Math.PI / 2, -Math.PI / 2 + TAU * fin); ctx.stroke();
+        ctx.fillStyle = rgba(C.accent2, fin);
+        ctx.beginPath(); ctx.arc(cx, cy, R * 0.16 * ease.outBack(fin), 0, TAU); ctx.fill();
+      }
+    },
+  };
+
+  const all = [orbit, path, stack, wave, close];
+
+  /* paint one reel as a still into its own canvas (drum faces, posters):
+     the same pure function, at a fixed t, with no keep-outs */
+  function still(canvas, reel, t, colors, inset = 14) {
+    // layout size, not getBoundingClientRect: a drum face is 3D-transformed,
+    // and its projected box is not the size the canvas is drawn at
+    const W = Math.max(1, canvas.clientWidth), H = Math.max(1, canvas.clientHeight), dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    reel.draw(ctx, t, {
+      W, H, dpr, mobile: true, colors, keep: [], reduce: true, alpha: 1, p: t, index: 0,
+      free: { x: inset, y: inset, w: W - 2 * inset, h: H - 2 * inset },
+    });
+  }
+
+  return { orbit, path, stack, wave, close, all, still };
+});
+</script>
+<script>
+/* ── page wiring ── */
+(function () {
+  "use strict";
+  var SM = window.ScrollMotion, R = window.ScrollReels;
+  var film = document.getElementById("film");
+  var stage = film.querySelector(".smf-stage");
+
+  // 1. the film: five reels, one caption each, HUD keep-outs found by [data-keep]
+  var caps = R.all.map(function (r) { return film.querySelector('.smf-cap[data-reel="' + r.name + '"]'); });
+  var player = SM.film({ track: film, stage: stage, canvas: film.querySelector(".smf-canvas"), reels: R.all, captions: caps });
+
+  // 2. anchors inside the track, so a plain link (#reel-path) seeks the film
+  var anchors = film.querySelectorAll(".smf-anchor");
+  function placeAnchors() {
+    var span = film.offsetHeight - stage.offsetHeight;
+    anchors.forEach(function (a) { a.style.top = Math.round((parseFloat(a.dataset.at) / 5) * span) + "px"; });
+  }
+
+  // 3. the drum; its faces show each reel as a still (same pure function, fixed t)
+  var drumEl = document.getElementById("drum");
+  var drum = SM.drum(drumEl);
+  var faceCanvases = drumEl.querySelectorAll(".sd-face canvas");
+  function paintFaces() {
+    var colors = SM.readPalette(drumEl);
+    faceCanvases.forEach(function (cv, i) { R.still(cv, R.all[i], 0.86, colors, 12); });
+  }
+
+  // 4. theme toggle (auto follows prefers-color-scheme)
+  var modes = ["auto", "light", "dark"], mode = 0, btn = document.getElementById("theme");
+  btn.addEventListener("click", function () {
+    mode = (mode + 1) % 3;
+    if (mode === 0) delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = modes[mode];
+    btn.textContent = "Theme: " + modes[mode];
+    player.retheme(); paintFaces();
+  });
+  var mq = matchMedia("(prefers-color-scheme: dark)");
+  if (mq.addEventListener) mq.addEventListener("change", paintFaces);
+
+  var ro = new ResizeObserver(function () { placeAnchors(); paintFaces(); });
+  ro.observe(film); ro.observe(drumEl.querySelector(".sd-ring"));
+  placeAnchors(); paintFaces();
+
+  // exposed for the verification script and for poking at in devtools
+  window.__demo = { player: player, drum: drum };
+})();
+</script>
+</body>
+</html>

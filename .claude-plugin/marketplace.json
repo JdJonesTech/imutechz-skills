@@ -1,0 +1,27 @@
+{
+  "name": "imutechz-skills",
+  "owner": {
+    "name": "ImuTechz",
+    "url": "https://www.imutechz.in"
+  },
+  "metadata": {
+    "description": "Agent skills that do the whole job and check their own work: video creation, scroll motion graphics, and more.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "fish-video-skill",
+      "description": "Make an upload-ready Short, Reel, YouTube or LinkedIn video on any topic, from one interview to a packaged, QA-checked result.",
+      "source": "./",
+      "strict": false,
+      "skills": ["./skills/fish-video-skill"]
+    },
+    {
+      "name": "scroll-motion-graphics",
+      "description": "Turn scroll position into a motion-graphics timeline: pinned canvas films that scrub both ways and stay smooth on phones.",
+      "source": "./",
+      "strict": false,
+      "skills": ["./skills/scroll-motion-graphics"]
+    }
+  ]
+}

@@ -1,0 +1,175 @@
+/*! scroll-motion.css v1.0.0 · ImuTechz · MIT
+   The film (.smf) and the story drum (.sd). Colours are tokens on :root;
+   the canvas reads the same tokens (ScrollMotion.readPalette), so light
+   and dark mode are this one stylesheet. */
+
+:root {
+  --sm-bg: #f3ede2;
+  --sm-surface: #fbf8f2;
+  --sm-ink: #1c1914;
+  --sm-muted: #5c554b;
+  --sm-dim: #8a8277;
+  --sm-line: rgba(28, 25, 20, 0.12);
+  --sm-line-strong: rgba(28, 25, 20, 0.22);
+  --sm-accent: #f2661a;
+  --sm-accent-2: #d9481e;
+  --sm-accent-soft: rgba(242, 102, 26, 0.18);
+  --sm-cool: #2e6c96;
+  --sm-card: rgba(255, 255, 255, 0.74);
+  --sm-card-line: rgba(255, 255, 255, 0.9);
+  --sm-shadow: rgba(28, 25, 20, 0.4);
+  --sm-on-ink: #fbf8f2;
+  --sm-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --sm-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sm-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --sm-nav-h: 0px; /* height of a fixed site header, if the page has one */
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sm-bg: #0d0c0b; --sm-surface: #171513; --sm-ink: #f4efe7; --sm-muted: #b9b0a3; --sm-dim: #8a8277;
+    --sm-line: rgba(244, 239, 231, 0.12); --sm-line-strong: rgba(244, 239, 231, 0.24);
+    --sm-accent: #ff7a33; --sm-accent-2: #f2661a; --sm-accent-soft: rgba(255, 122, 51, 0.22); --sm-cool: #6fb2dc;
+    --sm-card: rgba(24, 22, 20, 0.78); --sm-card-line: rgba(255, 255, 255, 0.12); --sm-shadow: rgba(0, 0, 0, 0.9); --sm-on-ink: #0d0c0b;
+  }
+}
+:root[data-theme="dark"] {
+  --sm-bg: #0d0c0b; --sm-surface: #171513; --sm-ink: #f4efe7; --sm-muted: #b9b0a3; --sm-dim: #8a8277;
+  --sm-line: rgba(244, 239, 231, 0.12); --sm-line-strong: rgba(244, 239, 231, 0.24);
+  --sm-accent: #ff7a33; --sm-accent-2: #f2661a; --sm-accent-soft: rgba(255, 122, 51, 0.22); --sm-cool: #6fb2dc;
+  --sm-card: rgba(24, 22, 20, 0.78); --sm-card-line: rgba(255, 255, 255, 0.12); --sm-shadow: rgba(0, 0, 0, 0.9); --sm-on-ink: #0d0c0b;
+}
+
+.sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ───────────── the film ───────────── */
+
+/* the track: tall, so scrolling through it is the timeline. Never put
+   overflow: hidden/auto on an ancestor of the track, or sticky breaks. */
+.smf { position: relative; height: calc(var(--smf-n, 5) * 90svh + 100svh); }
+.smf-stage { position: sticky; top: 0; height: 100svh; overflow: hidden; color: var(--sm-ink); }
+.smf-canvas { position: absolute; inset: 0; display: block; pointer-events: none; }
+.smf-frame { position: absolute; inset: calc(var(--sm-nav-h) + 16px) clamp(16px, 4vw, 48px) 20px; pointer-events: none; }
+.smf-frame > * { pointer-events: auto; }
+
+.smf-hud { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 16px; font-family: var(--sm-mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--sm-dim); }
+.smf-hud-t { color: var(--sm-ink); }
+.smf-hud-bar { flex: 1; height: 1.5px; background: var(--sm-line-strong); position: relative; overflow: hidden; }
+.smf-hud-bar > i { position: absolute; inset: 0; background: var(--sm-accent); transform-origin: left; transform: scaleX(0); }
+
+.smf-cap {
+  position: absolute; width: min(400px, 100%); padding: 22px 24px 24px; border-radius: 20px;
+  background: var(--sm-card); border: 1px solid var(--sm-card-line);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow: 0 18px 50px -26px var(--sm-shadow);
+  opacity: 0; visibility: hidden; will-change: opacity, transform;
+}
+.smf-cap[data-place="left"] { left: 0; top: 50%; margin-top: -110px; }
+.smf-cap[data-place="right"] { right: 0; top: 50%; margin-top: -110px; }
+.smf-cap[data-place="bottom"] { left: 0; bottom: 0; width: min(560px, 100%); }
+.smf-cap[data-place="top"] { left: 0; top: 44px; }
+.smf-cap-k { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 12px; font-family: var(--sm-mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--sm-accent-2); }
+.smf-cap-h { margin: 0 0 10px; font-size: clamp(21px, 2.2vw, 28px); line-height: 1.12; letter-spacing: -0.02em; font-weight: 600; }
+.smf-cap-d { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--sm-muted); }
+.smf-hint { position: absolute; right: 0; bottom: 0; margin: 0; font-family: var(--sm-mono); font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--sm-dim); }
+
+@media (max-width: 759px) {
+  .smf { height: calc(var(--smf-n, 5) * 80svh + 100svh); }
+  .smf-frame { inset: calc(var(--sm-nav-h) + 12px) 16px 16px; }
+  .smf-cap, .smf-cap[data-place] { left: 0; right: 0; top: auto; bottom: 0; width: auto; margin: 0; padding: 16px 18px 18px; }
+  .smf-cap-d { font-size: 14px; }
+  .smf-hint { display: none; }
+  .smf-hud-x { display: none; }
+}
+
+/* ───────────── the story drum ───────────── */
+
+.sd { position: relative; }
+.sd-stage {
+  position: sticky; top: 0; height: 100svh; max-width: 1320px; margin: 0 auto;
+  padding: var(--sm-nav-h) clamp(16px, 4vw, 40px) 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 1.1fr) 180px; align-items: center; gap: clamp(20px, 3.5vw, 52px);
+  color: var(--sm-ink);
+}
+.sd-k { margin: 0 0 12px; font-family: var(--sm-mono); font-size: 11.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--sm-dim); }
+.sd-title { margin: 0 0 26px; font-size: clamp(30px, 3.6vw, 50px); line-height: 1.02; letter-spacing: -0.03em; }
+.sd-cap { min-height: 250px; animation: sd-in 0.55s var(--sm-ease) both; }
+.sd-cap[hidden] { display: none; }
+@keyframes sd-in { from { opacity: 0; transform: translateY(18px); filter: blur(5px); } }
+.sd-n { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--sm-accent-2); }
+.sd-h { margin: 0 0 12px; font-size: clamp(22px, 2.2vw, 30px); line-height: 1.15; letter-spacing: -0.02em; }
+.sd-d { margin: 0 0 18px; max-width: 42ch; font-size: 15.5px; line-height: 1.6; color: var(--sm-muted); }
+.sd-cta { display: inline-flex; gap: 8px; padding: 11px 18px; border-radius: 999px; background: var(--sm-ink); color: var(--sm-on-ink); font-weight: 600; font-size: 14px; text-decoration: none; transition: transform 0.3s; }
+.sd-cta:hover { transform: translateY(-2px); }
+.sd-cta:focus-visible, .sd-nav button:focus-visible, .sd-rail button:focus-visible { outline: 2px solid var(--sm-accent); outline-offset: 3px; }
+.sd-nav { display: flex; align-items: center; gap: 8px; margin-top: 26px; }
+.sd-nav button { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--sm-line-strong); background: var(--sm-surface); color: var(--sm-ink); font-size: 20px; line-height: 1; cursor: pointer; transition: background 0.2s, color 0.2s; }
+.sd-nav button:hover:not(:disabled) { background: var(--sm-ink); color: var(--sm-on-ink); }
+.sd-nav button:disabled { opacity: 0.35; cursor: default; }
+.sd-tip { margin-left: 8px; font-size: 12px; color: var(--sm-dim); }
+
+.sd-viewport {
+  --r: clamp(180px, 19vw, 260px);
+  position: relative; height: min(74vh, 600px); perspective: 1300px; display: grid; place-items: center;
+  cursor: grab; outline: none; touch-action: pan-y; /* touch scrolls the page natively */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent);
+}
+.sd-viewport.dragging { cursor: grabbing; }
+.sd-viewport:focus-visible .sd-face.on { outline: 2px solid var(--sm-accent); outline-offset: 4px; }
+.sd-ring { position: relative; width: 100%; height: calc(var(--r) * 1.12); transform-style: preserve-3d; will-change: transform; }
+.sd-face {
+  position: absolute; inset: 0; display: grid; grid-template-rows: 1fr auto; padding: 10px; border-radius: 22px;
+  text-decoration: none; color: var(--sm-ink); background: var(--sm-surface); border: 1px solid var(--sm-line-strong);
+  backface-visibility: hidden; -webkit-backface-visibility: hidden; user-select: none; -webkit-user-drag: none;
+  transition: border-color 0.4s, box-shadow 0.4s;
+}
+.sd-face.on { border-color: var(--sm-accent); box-shadow: 0 30px 70px -40px var(--sm-shadow), 0 0 0 4px var(--sm-accent-soft); }
+.sd-face-art { position: relative; border-radius: 14px; overflow: hidden; background: var(--sm-bg); }
+.sd-face-art canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.sd-face-meta { display: flex; align-items: center; gap: 12px; padding: 12px 6px 4px; }
+.sd-face-n { font-family: var(--sm-mono); font-size: 11px; color: var(--sm-dim); }
+.sd-face-t { flex: 1; font-weight: 600; font-size: 16px; }
+.sd-face-go { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--sm-ink); color: var(--sm-on-ink); font-size: 14px; transition: transform 0.3s; }
+.sd-face.on:hover .sd-face-go { transform: rotate(45deg); }
+
+.sd-rail { position: relative; list-style: none; margin: 0; padding: 0 0 0 22px; display: grid; gap: 14px; }
+.sd-rail > i { position: absolute; left: 0; top: 6px; bottom: 6px; width: 1.5px; background: var(--sm-line-strong); }
+.sd-rail > i > i { position: absolute; inset: 0; background: var(--sm-accent); transform-origin: top; transform: scaleY(0); }
+.sd-rail button { border: 0; background: none; padding: 2px 0; font: inherit; font-family: var(--sm-mono); font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; text-align: left; color: var(--sm-dim); cursor: pointer; transition: color 0.3s, transform 0.3s; }
+.sd-rail li.done button { color: var(--sm-muted); }
+.sd-rail li.on button { color: var(--sm-ink); transform: translateX(4px); }
+.sd-rail button:hover { color: var(--sm-accent-2); }
+
+@media (max-width: 1000px) {
+  .sd-stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; align-content: center; gap: 18px; padding-top: calc(var(--sm-nav-h) + 8px); }
+  .sd-rail, .sd-title, .sd-tip { display: none; }
+  .sd-d { display: none; }
+  .sd-nav { margin-top: 12px; }
+  .sd-nav button { width: 44px; height: 44px; } /* touch targets */
+  .sd-viewport { --r: clamp(150px, 40vw, 220px); height: min(52vh, 440px); }
+  .sd-copy { order: 2; }
+  .sd-cap { min-height: 150px; }
+  .sd-h { font-size: 22px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sd-cap { animation: none; }
+  .sd-face, .sd-rail button, .sd-cta, .sd-face-go { transition: none; }
+}
+
+/* ───────────── a self-rolling preview drum (decorative) ───────────── */
+
+.sdp { --r: clamp(90px, 11vw, 150px); --sdp-n: 4; position: absolute; inset: 0; display: grid; place-items: center; perspective: 900px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent); mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent); }
+.sdp-ring { position: relative; width: 70%; height: calc(var(--r) * 1.12); transform-style: preserve-3d; animation: sdp-roll 12s cubic-bezier(0.7, 0, 0.3, 1) infinite; }
+.sdp-face { position: absolute; inset: 0; border-radius: 16px; overflow: hidden; background: var(--sm-surface); border: 1px solid var(--sm-line-strong); backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+/* four faces: dwell 18% of the loop on each, roll in 7% */
+@keyframes sdp-roll {
+  0%, 18% { transform: translateZ(calc(var(--r) * -1)) rotateX(0deg); }
+  25%, 43% { transform: translateZ(calc(var(--r) * -1)) rotateX(90deg); }
+  50%, 68% { transform: translateZ(calc(var(--r) * -1)) rotateX(180deg); }
+  75%, 93% { transform: translateZ(calc(var(--r) * -1)) rotateX(270deg); }
+  100% { transform: translateZ(calc(var(--r) * -1)) rotateX(360deg); }
+}
+@media (prefers-reduced-motion: reduce) { .sdp-ring { animation: none; transform: translateZ(calc(var(--r) * -1)); } }

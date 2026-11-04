@@ -1,0 +1,78 @@
+# Fish Video brief. `fishvideo new` fills this from a prompt; edit anything.
+# Every number that will appear on screen or in the narration must be in
+# `facts` with a source, or be present in a fetched source (research/).
+
+title: ""                     # working title; becomes the package folder name
+prompt: ""                    # the original one-line request, kept for the record
+goal: explain                 # explain | promote | announce | teach
+audience: "developers and technical founders"
+structure: explainer          # explainer | product-tour | promo | listicle | story | announcement
+length: 60                    # target seconds for the main cut (snapped to 2 s bars at 120 BPM)
+platforms: [youtube]          # youtube | linkedin | linkedin-square | shorts | reels | tiktok | x
+language: en-IN               # BCP-47; drives voice, wpm, captions, fonts
+tone: "warm, precise, confident; no hype words"
+
+brand:
+  name: ""
+  url: ""
+  tagline: ""
+  logo: ""                    # project-relative path, e.g. assets/logo.svg (empty = typographic badge)
+  mode: light                 # light | dark
+  colors:                     # the whole design system is these tokens
+    bg: "#f3ede2"
+    surface: "#faf7f0"
+    paper: "#f8f4ec"
+    ink: "#1a1714"
+    fg: "#1c1915"
+    muted: "#58524a"
+    dim: "#847c70"
+    accent: "#d9481e"
+    accent2: "#15858d"
+  fonts:                      # bundled: Inter, Fraunces, JetBrains Mono, Caveat, Noto Sans Devanagari
+    sans: Inter
+    serif: Fraunces
+    mono: JetBrains Mono
+    hand: Caveat
+  font_files: []              # [{family, src: assets/MyFont.woff2, weight: 700, style: normal}]
+
+points: []                    # the 3-6 things the viewer must remember, in order
+facts: []                     # [{text: "10,631 agents and skills", value: "10,631", source: "https://..."}]
+sources: []                   # URLs to fetch for research and fact-checking
+
+website:                      # optional: a site or product to tour live (read-only)
+  url: ""
+  theme: light
+  pages: []                   # [{path: /pricing, seconds: 6}]; empty = automatic tour of url
+  hide: []                    # CSS selectors to hide while filming (cookie banners, chat widgets)
+  storage: {}                 # localStorage keys to set before load (e.g. dismiss an intro)
+
+reference:                    # optional: a video whose pacing to study (analysis only; never reuse footage or music)
+  src: ""                     # local file or YouTube URL
+
+cta:
+  text: ""
+  url: ""
+
+voice:                        # default: ElevenLabs voice fydPJq00SigRIaPxWgiS (English, India); edge-tts fallback
+  provider: elevenlabs        # elevenlabs | edge-tts | none
+  language: en-IN
+  elevenlabs:
+    voice_id: fydPJq00SigRIaPxWgiS
+    model_id: eleven_multilingual_v2
+    voice_settings: {stability: 0.42, similarity_boost: 0.8, style: 0.18, use_speaker_boost: true, speed: 0.96}
+  fallback:
+    provider: edge-tts
+    voice: en-IN-NeerjaNeural
+    rate: "-6%"
+  pronunciations: {}          # {"IMURUN": "Imu run", "GGUF": "G G U F"}: applied to every line
+
+score:                        # original synthesised score (no samples)
+  key: D
+  mode: minor                 # minor | major | dorian | mixolydian
+  progression: i-VI-III-VII
+  seed: 12345
+
+captions:
+  burn: auto                  # auto = per platform (LinkedIn/Shorts/Reels/X burn in, YouTube ships an SRT)
+
+hashtags: []

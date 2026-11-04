@@ -1,0 +1,329 @@
+# The Fish Video interview. The agent MUST run it before writing a script.
+#
+# How it is used:
+#   fishvideo interview <dir>                 -> prints the questions still open (JSON), round by round
+#   fishvideo interview <dir> --set id=value  -> records an answer (repeatable), maps it into brief.yaml
+#   fishvideo interview <dir> --answers a.json-> records many answers at once
+#   fishvideo gate <dir>                      -> fails while any `required` question is open
+#
+# Ask with the AskUserQuestion tool: up to 4 questions per call, one call per round,
+# options exactly as below (labels <= 5 words, the description says the trade-off),
+# the recommended option first with "(Recommended)". The user can always answer "Other".
+# Skip a question only when the user's prompt already answers it unambiguously
+# (record that answer with --set anyway, so the brief shows where it came from).
+# Never invent an answer for a `required` question. After the last round, read the
+# summary back to the user and get an explicit "yes, go" before scripting.
+#
+# ONE INTERVIEW, AT THE START. Everything that needs the user (voice + tone, colours,
+# assets, screen steps, API keys, installs, approvals) is asked here. Once creation
+# starts, do NOT ask further questions: decide from the answers + the style recipe.
+# The only later contacts are (a) optional stops the user chose in `checkpoints`,
+# (b) a desktop screen recording the user must perform (they chose it here, and are
+# told then exactly when to act), (c) the final review, then (d) permission to clean up.
+# If the user's own message later overrides an answer, follow the user.
+#
+# `maps_to` is the brief.yaml key path the answer is written to. `when` limits a
+# question to projects where an earlier answer matches.
+
+rounds:
+  - id: purpose
+    title: "Round 1 - What is this video for?"
+    questions:
+      - id: topic
+        required: true
+        header: Topic
+        question: "In one sentence, what is the video about, and what should a viewer know or do after watching it? (Or give just a word or area, and I will suggest 5 trending angles first: references/topic-to-video.md)"
+        free_text: true
+        maps_to: summary
+      - id: goal
+        required: true
+        header: Goal
+        question: "What is the main job of this video?"
+        maps_to: goal
+        options:
+          - {label: "Explain / teach (Recommended)", value: explain, description: "How something works; diagrams, steps, proof"}
+          - {label: "Promote a product", value: promote, description: "Show the product, its benefits, one strong CTA"}
+          - {label: "Motivate / story", value: story, description: "An emotional arc: tension, turn, payoff"}
+          - {label: "Announce / launch", value: announce, description: "What is new, why now, where to get it"}
+      - id: audience
+        required: true
+        header: Audience
+        question: "Who is watching, and how much do they already know about the topic?"
+        maps_to: audience
+        options:
+          - {label: "Curious beginners", value: "curious beginners; no jargon, one idea at a time", description: "Plain words, analogies, slower pace"}
+          - {label: "Practitioners", value: "practitioners who know the basics", description: "Skip basics, show specifics and numbers"}
+          - {label: "Experts / developers", value: "experts and developers", description: "Dense, technical, code and architecture"}
+          - {label: "Buyers / decision makers", value: "buyers and decision makers", description: "Outcomes, proof, cost, trust"}
+      - id: platforms
+        required: true
+        header: Platforms
+        multi: true
+        question: "Where will it be posted? (pick all; each gets its own cut and safe zones)"
+        maps_to: platforms
+        options:
+          - {label: "YouTube Shorts 9:16", value: shorts, description: "1080x1920, <= 3 min, burned captions"}
+          - {label: "YouTube 16:9", value: youtube, description: "1920x1080, SRT captions, chapters"}
+          - {label: "Instagram Reels / TikTok", value: "reels,tiktok", description: "9:16, UI-safe layouts"}
+          - {label: "LinkedIn 4:5", value: linkedin, description: "1080x1350, burned captions"}
+
+  - id: shape
+    title: "Round 2 - Shape and style"
+    questions:
+      - id: length
+        required: true
+        header: Length
+        question: "How long should the main cut be?"
+        maps_to: length
+        options:
+          - {label: "15-30 s Short (Recommended)", value: 25, description: "One idea, a hook in 1 s, loops well"}
+          - {label: "30-60 s", value: 50, description: "Hook + 3 beats + payoff"}
+          - {label: "1-3 min", value: 120, description: "A full explainer with chapters"}
+          - {label: "3-10 min", value: 300, description: "Tutorial / deep dive; needs real screen footage"}
+      - id: style
+        required: true
+        header: Style
+        question: "Which visual style? (see references/style-recipes.md for what each looks and sounds like)"
+        maps_to: style
+        options_from: styles   # filled from config/styles.yaml: label, one-line look, best for
+      - id: references
+        required: false
+        header: References
+        question: "Any reference videos whose feel (pace, sound, look) I should match? Paste links or file paths, or say none."
+        free_text: true
+        maps_to: reference.videos
+      - id: hook
+        required: true
+        header: Hook
+        question: "How should the first 1-2 seconds grab attention?"
+        maps_to: hook.kind
+        options:
+          - {label: "Bold claim / question", value: claim, description: "A surprising line in huge type, with an impact hit"}
+          - {label: "Visual surprise", value: visual, description: "A striking image or cut-out reveal before any words"}
+          - {label: "Pain point", value: pain, description: "Name the viewer's problem in their words"}
+          - {label: "Result first", value: result, description: "Show the finished outcome, then rewind to how"}
+
+  - id: look
+    title: "Round 3 - Colours, type and texture"
+    questions:
+      - id: palette
+        required: true
+        header: Colours
+        question: "Which colours? Give brand hex codes, or pick a palette (previews in references/style-recipes.md)."
+        maps_to: palette
+        options_from: palettes   # config/styles.yaml palettes; "Other" = user hex codes
+      - id: mode
+        required: true
+        header: Light/dark
+        question: "Light or dark background?"
+        maps_to: brand.mode
+        options:
+          - {label: "Style default (Recommended)", value: auto, description: "Use what the chosen style is built for"}
+          - {label: "Light", value: light, description: "Paper, cream or white grounds"}
+          - {label: "Dark", value: dark, description: "Near-black grounds, glowing accents"}
+      - id: type
+        required: true
+        header: Typography
+        question: "What should the type feel like?"
+        maps_to: type_feel
+        options:
+          - {label: "Heavy grotesk (Recommended)", value: grotesk, description: "Big, tight, bold sans (Inter Display 800/900): Shorts standard"}
+          - {label: "Editorial serif mix", value: editorial, description: "Serif italic accents with a clean sans"}
+          - {label: "Hand-drawn", value: hand, description: "Marker / handwriting for whiteboard energy"}
+          - {label: "Mono / technical", value: mono, description: "Code and terminal feel"}
+      - id: texture
+        required: true
+        header: Texture
+        question: "Surface texture and finish?"
+        maps_to: texture
+        options:
+          - {label: "Paper + halftone", value: paper, description: "Crumpled paper, halftone photos, soft shadows"}
+          - {label: "Film grain + vignette", value: grain, description: "Cinematic, moody"}
+          - {label: "Clean flat", value: clean, description: "No texture; crisp UI look"}
+          - {label: "Grid / blueprint", value: grid, description: "Graph paper or blueprint lines"}
+
+  - id: sound
+    title: "Round 4 - Voice, music and sound effects"
+    questions:
+      - id: voice
+        required: true
+        header: Voice
+        question: "Which narrator? (I render a 6-second audition of each option right now, before creation starts: fishvideo voices <dir> --audition, and give you the files to play.)"
+        maps_to: voice.pick
+        options_from: voices     # config/voices.yaml shortlist for the chosen language
+      - id: voice_energy
+        required: true
+        header: Delivery
+        question: "How should the narrator deliver it?"
+        maps_to: voice.delivery
+        options:
+          - {label: "Punchy storyteller (Recommended)", value: punchy, description: "Fast (~3 words/s), dynamic, short pauses: Shorts style"}
+          - {label: "Calm explainer", value: calm, description: "~2.4 words/s, warm, clear"}
+          - {label: "Deep cinematic", value: cinematic, description: "Low, slow, dramatic pauses"}
+          - {label: "No voice, music + text", value: none, description: "Kinetic type carries the story"}
+      - id: music
+        required: true
+        header: Music
+        question: "What background music?"
+        maps_to: music.mood
+        options_from: music_moods  # config/styles.yaml music moods (synth presets + library search terms)
+      - id: sfx
+        required: true
+        header: SFX
+        question: "How much sound design (whooshes, pops, risers, clicks, impacts)?"
+        maps_to: sfx.density
+        options:
+          - {label: "Rich (Recommended)", value: rich, description: "Every entrance, cut and reveal has a sound, like top Shorts"}
+          - {label: "Standard", value: standard, description: "Transitions and key reveals only"}
+          - {label: "Minimal", value: minimal, description: "A few accents; music does the work"}
+
+  - id: assets
+    title: "Round 5 - Real footage, assets and screen recording"
+    questions:
+      - id: real_assets
+        required: true
+        header: Real assets
+        question: "May I use real photos, stock video, icons and SFX from free-licence libraries (Pexels, Pixabay, Openverse, Wikimedia, NASA, Freesound CC0, YouTube CC-BY)? Every file is logged with its licence."
+        maps_to: assets.policy
+        options:
+          - {label: "Yes, mix real + animated (Recommended)", value: mixed, description: "Cut-outs, b-roll and textures merged with motion graphics"}
+          - {label: "Only my own files", value: own, description: "I will drop files into assets/"}
+          - {label: "Animation only", value: none, description: "Everything drawn in code"}
+      - id: screen
+        required: true
+        header: Screen rec
+        question: "Should the video show a real screen (website, app or desktop) with cursor, click sounds and focus-zoom?"
+        maps_to: screen.kind
+        options:
+          - {label: "Website tour", value: website, description: "I film a URL in headless Chromium (read-only)"}
+          - {label: "Desktop / app recording", value: desktop, description: "Records your real screen; you perform the steps"}
+          - {label: "I have recordings", value: files, description: "You give me .mp4 screen recordings"}
+          - {label: "No screen footage", value: none, description: "Motion graphics only"}
+      - id: screen_target
+        required: true
+        when: {screen: [website, desktop, files]}
+        header: What to show
+        question: "Which URL / app / files, and what are the 3-5 actions to show (e.g. open search, type 'x', click result)?"
+        free_text: true
+        maps_to: screen.target
+      - id: brand_files
+        required: false
+        header: Brand files
+        question: "Logo, fonts or product images to use? Give paths, or say none (I never redraw a logo)."
+        free_text: true
+        maps_to: brand.files
+
+  - id: content
+    title: "Round 6 - What it says"
+    questions:
+      - id: points
+        required: true
+        header: Key points
+        question: "What 3-5 points must the viewer remember, in order? (rough notes are fine)"
+        free_text: true
+        maps_to: points
+      - id: facts
+        required: false
+        header: Facts
+        question: "Any numbers, names or claims that must appear? Give each with a source link (unsourced numbers are blocked)."
+        free_text: true
+        maps_to: facts_raw
+      - id: cta
+        required: true
+        header: Call to action
+        question: "What should the viewer do at the end?"
+        maps_to: cta.kind
+        options:
+          - {label: "Follow / subscribe", value: follow, description: "Short end card, loop back to the hook"}
+          - {label: "Visit a link", value: link, description: "URL on the end card + description"}
+          - {label: "Comment a keyword", value: comment, description: "Drives engagement on Shorts"}
+          - {label: "No CTA", value: none, description: "End on the payoff"}
+      - id: language
+        required: true
+        header: Language
+        question: "Narration and caption language / accent?"
+        maps_to: language
+        options:
+          - {label: "English (US)", value: en-US, description: "Neutral US narrator"}
+          - {label: "English (India)", value: en-IN, description: "Indian English narrator"}
+          - {label: "English (UK)", value: en-GB, description: "British narrator"}
+          - {label: "Hindi", value: hi-IN, description: "Devanagari captions"}
+
+  - id: packaging
+    title: "Round 7 - Captions, packaging, approvals"
+    questions:
+      - id: captions
+        required: true
+        header: Captions
+        question: "Caption style on screen?"
+        maps_to: captions.style
+        options:
+          - {label: "Bold word-pop (Recommended)", value: pop, description: "1-3 huge words at a time, the spoken word highlighted"}
+          - {label: "Karaoke lines", value: karaoke, description: "Two lines, each word lit as spoken"}
+          - {label: "Minimal subtitles", value: minimal, description: "Small, clean, bottom"}
+          - {label: "None (SRT only)", value: none, description: "No burned captions"}
+      - id: channel
+        required: false
+        header: Channel
+        question: "Channel / brand name for the title, description and end card? (or none)"
+        free_text: true
+        maps_to: brand.name
+      - id: thumbnail
+        required: true
+        header: Thumbnail
+        question: "Thumbnail approach?"
+        maps_to: thumbnail.style
+        options:
+          - {label: "Big 3-word text + subject", value: text_subject, description: "Cut-out subject, 3 huge words, one accent"}
+          - {label: "Best frame + title", value: frame, description: "Strongest frame of the video with a title"}
+          - {label: "Before / after", value: compare, description: "Split frame showing the change"}
+      - id: checkpoints
+        required: true
+        header: Approvals
+        question: "Once creation starts I will not ask anything else. Do you want any optional stop before the final video?"
+        maps_to: approvals.required
+        multi: true
+        options:
+          - {label: "No stops, final only (Recommended)", value: final, description: "I build everything; you review the finished video, then I ask about cleanup"}
+          - {label: "Also show script first", value: storyboard, description: "One pause to read the narration + scene list"}
+          - {label: "Also show style frames", value: stills, description: "One pause with a still per scene"}
+
+  - id: keys
+    title: "Round 8 - Accounts and API keys (asked now, never later)"
+    note: >
+      Run `fishvideo doctor --keys` first and only ask about keys that are missing AND
+      matter for the answers above. For each, tell the user exactly how to get it (the
+      `how` text) and what happens without it (`fallback`). Keys go into the skill's
+      gitignored .env (the agent writes it only if the user pastes a key and agrees);
+      never echo a key back, never commit it.
+    questions:
+      - id: keys_have
+        required: true
+        header: API keys
+        multi: true
+        question: "Which of these keys can you provide now? (all optional; each has a free fallback)"
+        maps_to: keys.provided
+        options:
+          - {label: "ElevenLabs (best voices)", value: ELEVENLABS_API_KEY, description: "elevenlabs.io > Profile > API keys. Paid plan needed for commercial use. Without: free edge-tts / Kokoro voices"}
+          - {label: "Pexels + Pixabay (stock)", value: "PEXELS_API_KEY,PIXABAY_API_KEY", description: "Free: pexels.com/api and pixabay.com/api/docs (sign up, key shown). Without: Openverse, Wikimedia, NASA (key-less)"}
+          - {label: "Freesound (SFX)", value: FREESOUND_API_KEY, description: "Free: freesound.org/apiv2/apply. Without: Kenney CC0 packs + synthesised SFX"}
+          - {label: "YouTube Data API", value: YOUTUBE_API_KEY, description: "Free: console.cloud.google.com > enable YouTube Data API v3 > Credentials. Without: yt-dlp search (slower, no 'most popular' chart)"}
+      - id: keys_paste
+        required: false
+        when: {keys_have: [ELEVENLABS_API_KEY, "PEXELS_API_KEY,PIXABAY_API_KEY", FREESOUND_API_KEY, YOUTUBE_API_KEY]}
+        header: Paste keys
+        question: "Paste the keys (KEY_NAME=value, one per line), or say 'I will put them in .env myself'. I store them only in the skill's gitignored .env."
+        free_text: true
+        secret: true          # never write this answer into brief.yaml or any log
+        maps_to: null
+      - id: optional_installs
+        required: false
+        header: Extras
+        multi: true
+        question: "Install optional extras now? (each is a one-time pip install into the skill's venv)"
+        maps_to: installs
+        options:
+          - {label: "Background removal", value: rembg, description: "rembg (~200 MB model) for photo cut-outs; without it I use provided PNGs or framed photos"}
+          - {label: "Local natural voices", value: kokoro, description: "Kokoro-82M TTS (Apache-2.0, ~350 MB), offline"}
+          - {label: "Word alignment", value: faster-whisper, description: "Align your own recorded voiceover to captions"}
+          - {label: "None", value: none, description: "Use what is installed"}

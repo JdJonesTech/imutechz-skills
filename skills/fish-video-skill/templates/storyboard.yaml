@@ -1,0 +1,54 @@
+# Storyboard template. Copy to <project>/storyboard.yaml and rewrite.
+# Scene types: title kinetic bullets steps stat chart diagram whiteboard compare quote terminal tour image end
+# Timing is derived from narration (`say`) + animation and snapped to 2 s bars at 120 BPM.
+# Markup in on-screen text: *accent*  ~serif italic~  **bold**  \n
+# Narration markup: {shown|spoken}, e.g. {GGUF|G G U F}
+title: "<working title>"
+bpm: 120
+hud: {chapter: true, rail: true}
+scenes:
+  - id: hook
+    type: kinetic
+    params: {lines: ["<outcome in ≤ 6 words>", "~<the twist>~"]}
+    say: "<the hook, one sentence>"
+
+  - id: title
+    type: title
+    params: {kicker: "<site or category>", title: "<Name>", subtitle: "<one-line promise>", chips: ["<fact 1>", "<fact 2>", "<the key benefit>"]}
+    say: "<Name>: <promise>."
+
+  - id: idea
+    type: bullets
+    chapter: "01 · What it is"
+    transition: wipe
+    params: {kicker: "In short", title: "<Name> in three parts", items: ["<part 1>", "<part 2>", "<part 3>"]}
+    say: ["<part 1, spoken>.", "<part 2>.", "<part 3>."]
+
+  - id: how
+    type: whiteboard
+    chapter: "02 · How it works"
+    transition: wipe
+    params: {tag: "How it works", step: 1, title: "<mechanism>", flow: ["<A>", "<B>", "<C>"], notes: ["<a note>", "", "<a note>"], take: "<the takeaway, with one *accent* word>"}
+    say: "<explain A to B to C in one or two sentences>"
+
+  - id: proof
+    type: stat
+    params: {value: 0, suffix: "", label: "<what the number means>", source: "<URL or brief.facts source>"}
+    say: "<the number, said once — must be in brief.facts>"
+
+  - id: get
+    type: terminal
+    chapter: "03 · Get it"
+    transition: wipe
+    params: {kicker: "Get it", title: "One command.", lines: [{cmd: "<install command>"}, {comment: "then"}, {cmd: "<run command>"}]}
+    say: "<how to start>"
+
+  - id: end
+    type: end
+    params: {name: "<Name>", tagline: "<tagline>", links: ["<url>"], cta: "<one action>"}
+    say: "<Name>. <tagline>"
+
+captures: []
+#  - {id: home, url: "https://…", auto: {seconds: 8}}
+
+thumbnail: {kicker: "<NAME · TOPIC>", title: "<2–5 big words>", accent: "<one word>", badge: "<format, e.g. 60-second explainer>"}

@@ -1,0 +1,21 @@
+# Smoke-test brief: a FICTIONAL product, so nothing here needs a real source.
+title: "Tidewell in 16 seconds"
+prompt: "A 16 second explainer about Tidewell, a fictional rain-water meter, for YouTube and Shorts"
+goal: explain
+structure: explainer
+length: 16
+platforms: [youtube, shorts]
+language: en-IN
+brand:
+  name: Tidewell
+  url: tidewell.example
+  tagline: "Every drop, counted."
+  mode: light
+  colors: {bg: "#eef3f1", surface: "#f8fbfa", paper: "#f4f8f6", ink: "#13201c", fg: "#16241f", muted: "#4d5d57", dim: "#7a8a84", accent: "#0f7c6b", accent2: "#d9481e"}
+facts:
+  - {text: "Tidewell is fictional: 3 sensors per roof", value: "3", source: "fixture (fictional)"}
+  - {text: "a reading every 15 minutes", value: "15", source: "fixture (fictional)"}
+voice:
+  provider: edge-tts
+  pronunciations: {Tidewell: "Tide well"}
+hashtags: [FishVideo, Smoke]

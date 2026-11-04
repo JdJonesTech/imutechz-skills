@@ -1,0 +1,228 @@
+# Fish Video Skill defaults. A project's brief.yaml overrides any of these
+# keys (deep merge). Numbers here are the tested defaults, not suggestions.
+
+tempo:
+  bpm: 120            # one bar = 2.0 s; every cut lands on a bar line
+  beats_per_bar: 4
+
+pacing:
+  lead_in: 0.35       # s from scene start to the first spoken word
+  line_gap: 0.30      # s breath between narration lines inside a scene
+  tail: 0.55          # s after the last word before the cut
+  wpm:                # speaking rate used to estimate before TTS exists
+    default: 150
+    en-IN: 145
+    en-US: 155
+    en-GB: 150
+    hi-IN: 130
+    es: 160
+    fr: 150
+    de: 140
+  min_scene:          # s a scene needs on screen even without narration
+    title: 4.0
+    kinetic: 3.0
+    bullets: 4.0
+    stat: 4.0
+    chart: 5.0
+    diagram: 5.0
+    whiteboard: 6.0
+    steps: 5.0
+    quote: 4.0
+    compare: 5.0
+    terminal: 5.0
+    tour: 4.0
+    image: 4.0
+    end: 4.0
+    thumbnail: 1.0
+
+# Voice. Default: the ElevenLabs voice chosen for ImuTechz (English, India).
+# Without ELEVENLABS_API_KEY (environment or the project/skill .env) the
+# free edge-tts fallback is used and the build says so.
+voice:
+  provider: elevenlabs
+  language: en-IN
+  elevenlabs:
+    voice_id: fydPJq00SigRIaPxWgiS
+    voice_url: https://elevenlabs.io/voices/fydPJq00SigRIaPxWgiS
+    model_id: eleven_multilingual_v2
+    language_code: null
+    output_format: mp3_44100_128
+    voice_settings:
+      stability: 0.42
+      similarity_boost: 0.8
+      style: 0.18
+      use_speaker_boost: true
+      speed: 0.96
+    use_context: true
+    max_speed: 1.12
+  fallback:
+    provider: edge-tts
+    voice: en-IN-NeerjaNeural
+    rate: "-6%"
+    pitch: "+0Hz"
+    volume: "+0%"
+    max_rate: "+8%"
+  # applied to the voice track: rumble cut, low-mid cleanup, presence + air, gentle compression, a short soft room
+  post: "highpass=f=85,equalizer=f=280:t=q:w=1.2:g=-2,equalizer=f=4800:t=q:w=1.4:g=1.5,highshelf=f=9000:g=3,acompressor=threshold=-20dB:ratio=2.5:attack=8:release=120:makeup=2,aecho=0.9:0.9:23|41:0.07|0.04"
+
+# Three stems (references/sound-design.md). Numbers come from measuring the reference Shorts.
+mix:
+  voice_lufs: -16            # voice stem level before summing
+  music_under_voice_db: -10  # music under the voice, measured ON A SIMULATED PHONE SPEAKER, so it stays audible everywhere
+  music_max_fullband_db: -8  # ...but never louder than this under the voice full-range (headphones stay balanced)
+  music_carve_db: -1.5       # gentle static mid dip; the duck makes room for words. A deep dip kills music on phones
+  translate:                 # small-speaker translation: bass harmonics the ear hears as bass (references/sound-design.md)
+    music_drive_db: 14
+    music_harmonics_db: -4
+    music_width: 0.85        # slightly narrower stereo, so a mono phone speaker does not cancel it
+    sfx_drive_db: 16
+    sfx_harmonics_db: -6
+  sfx_gain_db: 0             # manual trim on the SFX stems (never ducked)
+  sfx_under_voice_db: -7     # on a phone, a typical SFX event peaks this far under typical speech (auto-calibrated)
+  sfx_max_boost_db: 12
+  duck:                      # sidechain: the voice ducks the music ~6 dB while speaking
+    threshold: 0.05
+    ratio: 3
+    attack: 10
+    release: 250
+    makeup: 1
+  loudness: -14            # LUFS integrated (overridden per platform)
+  true_peak: -1.5          # dBTP
+  lra: 11
+
+score:
+  key: D
+  mode: minor
+  progression: i-VI-III-VII
+  seed: 12345
+  drums: true
+  sfx: true
+
+captions:
+  max_chars: 42
+  max_lines: 2
+  min_cue: 0.9            # s
+  max_cps: 20             # characters per second (reading speed)
+
+# Platform profiles. safe = margins (px) kept clear of UI overlays; scenes
+# lay out inside them, burned-in captions sit just above the bottom one.
+platforms:
+  youtube:
+    label: YouTube
+    W: 1920
+    H: 1080
+    fps: 30
+    safe: {top: 70, right: 110, bottom: 80, left: 110}
+    burn_captions: false
+    crf: 18
+    maxrate: 16M
+    bufsize: 32M
+    audio_bitrate: 192k
+    loudness: -14
+    true_peak: -1.5
+    max_seconds: null
+    captions: {max_chars: 42, max_lines: 2}
+    min_text_px: 22
+  linkedin:
+    label: LinkedIn (4:5)
+    W: 1080
+    H: 1350
+    fps: 30
+    safe: {top: 70, right: 64, bottom: 80, left: 64}
+    burn_captions: true
+    crf: 19
+    maxrate: 10M
+    bufsize: 20M
+    audio_bitrate: 192k
+    loudness: -14
+    true_peak: -1.5
+    max_seconds: 600
+    captions: {max_chars: 32, max_lines: 2}
+    min_text_px: 24
+  linkedin-square:
+    label: LinkedIn (1:1)
+    W: 1080
+    H: 1080
+    fps: 30
+    safe: {top: 60, right: 64, bottom: 64, left: 64}
+    burn_captions: true
+    crf: 19
+    maxrate: 10M
+    bufsize: 20M
+    audio_bitrate: 192k
+    loudness: -14
+    true_peak: -1.5
+    max_seconds: 600
+    captions: {max_chars: 32, max_lines: 2}
+    min_text_px: 24
+  shorts:
+    label: YouTube Shorts (9:16)
+    W: 1080
+    H: 1920
+    fps: 30
+    safe: {top: 240, right: 140, bottom: 420, left: 64}
+    burn_captions: true
+    crf: 19
+    maxrate: 12M
+    bufsize: 24M
+    audio_bitrate: 192k
+    loudness: -12
+    true_peak: -1.0
+    max_seconds: 180
+    captions: {max_chars: 26, max_lines: 2}
+    min_text_px: 28
+  reels:
+    label: Instagram Reels (9:16)
+    W: 1080
+    H: 1920
+    fps: 30
+    safe: {top: 250, right: 140, bottom: 480, left: 64}
+    burn_captions: true
+    crf: 19
+    maxrate: 10M
+    bufsize: 20M
+    audio_bitrate: 192k
+    loudness: -12
+    true_peak: -1.0
+    max_seconds: 90
+    captions: {max_chars: 26, max_lines: 2}
+    min_text_px: 28
+  tiktok:
+    label: TikTok (9:16)
+    W: 1080
+    H: 1920
+    fps: 30
+    safe: {top: 220, right: 160, bottom: 460, left: 64}
+    burn_captions: true
+    crf: 19
+    maxrate: 10M
+    bufsize: 20M
+    audio_bitrate: 192k
+    loudness: -12
+    true_peak: -1.0
+    max_seconds: 600
+    captions: {max_chars: 26, max_lines: 2}
+    min_text_px: 28
+  x:
+    label: X (16:9)
+    W: 1920
+    H: 1080
+    fps: 30
+    safe: {top: 70, right: 110, bottom: 90, left: 110}
+    burn_captions: true
+    crf: 20
+    maxrate: 12M
+    bufsize: 24M
+    audio_bitrate: 128k
+    loudness: -14
+    true_peak: -1.5
+    max_seconds: 140
+    captions: {max_chars: 42, max_lines: 2}
+    min_text_px: 22
+  thumbnail:
+    label: Thumbnail
+    W: 1280
+    H: 720
+    fps: 30
+    safe: {top: 40, right: 56, bottom: 40, left: 56}
+    burn_captions: false

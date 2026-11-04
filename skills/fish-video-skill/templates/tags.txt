@@ -1,0 +1,6 @@
+# One tag per line, most specific first. 5–15 tags. No misleading tags.
+<product name>
+<category>
+<technology>
+<audience problem>
+explainer

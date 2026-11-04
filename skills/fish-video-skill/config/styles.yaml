@@ -1,0 +1,127 @@
+# Style recipes. A style is a LOCKED STYLE BIBLE (look, type, motif, sound, pacing)
+# plus a BEAT PATTERN (scene types per meaning-beat). It contains NO copy: every word
+# on screen and in the narration is written fresh for each video from the interview.
+# `fishvideo script <dir>` builds the storyboard skeleton from the chosen style with
+# TODO placeholders; `fishvideo gate` refuses to render while any TODO remains.
+
+styles:
+  paper-collage:
+    label: "Paper collage (Recommended)"
+    look: "Crumpled paper, B&W halftone cut-outs with shadows, bold labels + hand arrows, split reveals"
+    best_for: "documentary facts, psychology, history, 'how X really works'"
+    defaults: {texture: paper, mode: light, palette: mono-paper, type_feel: grotesk, captions: pop, sfx: rich, music: dark-drone, assets: mixed}
+    pacing: {change_every: 1.1, hard_cuts_per_15s: 2, transitions: [defocus, split, zoom, cut]}
+    motif: "one recurring real object per idea (photo cut-out), contact shadow top-left light"
+    beats:
+      - {beat: hook,      scene: collage,  note: "subject cut-out on paper + 1 bold label with an arrow; frame 0 already full"}
+      - {beat: claim,     scene: split,    note: "the subject card splits open to reveal the hidden mechanism"}
+      - {beat: concept,   scene: collage,  note: "2-3 objects joined by hairline connectors, labels"}
+      - {beat: escalate,  scene: whiteboard, alt: diagram, note: "the mechanism drawn on paper (diagram is mandatory in explainers)"}
+      - {beat: turn,      scene: cone,     note: "cut to dark: spotlight cone reveals the key line"}
+      - {beat: payoff,    scene: collage,  note: "callback to the hook object, changed"}
+      - {beat: end,       scene: end,      note: "one line CTA, or loop to frame 0"}
+  studio-kinetic:
+    label: "Studio kinetic"
+    look: "Bright studio gradient, big kinetic words, cut-out subject, 3D coin/logo carousel, orbit glow"
+    best_for: "people, companies, products, 'X isn't just Y'"
+    defaults: {texture: clean, mode: light, palette: studio-lime, type_feel: grotesk, captions: pop, sfx: rich, music: hiphop-groove, assets: mixed}
+    pacing: {change_every: 0.9, hard_cuts_per_15s: 2, transitions: [zoom, flip, cut]}
+    motif: "accent-coloured glow spheres orbiting the subject"
+    beats:
+      - {beat: hook,    scene: kinetic,  note: "title slam at 0.0 s with impact"}
+      - {beat: subject, scene: collage,  note: "cut-out rises from bottom + orbit ring"}
+      - {beat: list,    scene: coinflip, note: "items land one by one on the word that names them"}
+      - {beat: proof,   scene: stat,     alt: chart, note: "one sourced number"}
+      - {beat: end,     scene: end}
+  neon-diagram:
+    label: "Neon diagram"
+    look: "Dark grid, glowing line charts and flows, glow icons popping at vertices, electric arcs"
+    best_for: "expectation vs reality, growth, processes, data stories"
+    defaults: {texture: grid, mode: dark, palette: neon-amber, type_feel: grotesk, captions: pop, sfx: rich, music: dark-build, assets: none}
+    pacing: {change_every: 0.75, hard_cuts_per_15s: 1, transitions: [zoom, flash, cut]}
+    motif: "one glowing line that keeps drawing across scenes"
+    beats:
+      - {beat: hook,     scene: neonline, note: "straight line = the expectation"}
+      - {beat: reality,  scene: neonline, note: "zigzag with icons at each vertex, zap per vertex"}
+      - {beat: mechanism, scene: diagram, note: "the flow behind it, glowing boxes"}
+      - {beat: proof,    scene: chart}
+      - {beat: payoff,   scene: kinetic, note: "riser into impact, then silence"}
+  glow-metaphor:
+    label: "Glow metaphor"
+    look: "Black, one glowing sphere as the hero, morphs, tunnels, starfields, ring blooms"
+    best_for: "motivation, habits, mindset, abstract ideas"
+    defaults: {texture: grain, mode: dark, palette: mono-glow, type_feel: grotesk, captions: pop, sfx: rich, music: cinematic-swell, assets: none}
+    pacing: {change_every: 1.2, hard_cuts_per_15s: 0, transitions: [zoom, defocus]}
+    motif: "the sphere is the viewer; every scene changes what happens to it"
+    beats:
+      - {beat: hook,    scene: glowshapes, note: "sphere moving alone"}
+      - {beat: trap,    scene: glowshapes, note: "sphere boxed in"}
+      - {beat: spiral,  scene: tunnel,     note: "zoom-through on the turning line"}
+      - {beat: growth,  scene: glowshapes, note: "something grows from the sphere"}
+      - {beat: payoff,  scene: ringbloom}
+  screen-explainer:
+    label: "Screen explainer"
+    look: "Real screen recording in an inset frame, glow cursor, click ripples + sounds, zoom-to-focus, spotlight, STEP cards"
+    best_for: "app/website tutorials, product demos, 'how to do X in Y'"
+    defaults: {texture: clean, mode: dark, palette: brand, type_feel: grotesk, captions: pop, sfx: standard, music: lofi-tech, assets: mixed}
+    pacing: {change_every: 2.0, hard_cuts_per_15s: 3, transitions: [zoom, cut, wipe]}
+    motif: "brand-coloured inset frame; every click = ripple + click sound + 1.6-2x focus zoom"
+    beats:
+      - {beat: hook,   scene: kinetic, note: "show the RESULT first (a frame of the finished thing)"}
+      - {beat: step,   scene: tour,    repeat: true, note: "STEP N card -> recording, spotlight on the control, zoom to cursor, callout"}
+      - {beat: recap,  scene: steps}
+      - {beat: end,    scene: end}
+  whiteboard-explainer:
+    label: "Whiteboard explainer"
+    look: "Grid paper, marker-drawn diagrams built live, hand lettering, one accent"
+    best_for: "technical mechanisms, architecture, step-by-step teaching"
+    defaults: {texture: grid, mode: light, palette: warm-paper, type_feel: hand, captions: karaoke, sfx: standard, music: calm-pulse, assets: none}
+    pacing: {change_every: 1.5, hard_cuts_per_15s: 1, transitions: [wipe, fade]}
+    motif: "the marker pen; every idea is drawn, never just shown"
+    beats:
+      - {beat: hook,      scene: kinetic}
+      - {beat: idea,      scene: whiteboard}
+      - {beat: mechanism, scene: whiteboard, repeat: true}
+      - {beat: proof,     scene: chart, alt: stat}
+      - {beat: end,       scene: end}
+  stick-fable:
+    label: "Minimal fable (music only)"
+    look: "Black lanes, simple figures/shapes compared side by side, one punchline"
+    best_for: "comparisons (A vs B vs C), loops, no-voice Shorts"
+    defaults: {texture: clean, mode: dark, palette: mono-red, type_feel: grotesk, captions: none, sfx: minimal, music: phonk-loop, assets: none, voice: none}
+    pacing: {change_every: 1.8, hard_cuts_per_15s: 0, transitions: [cut]}
+    motif: "the same action performed by each lane, diverging"
+    beats:
+      - {beat: setup,     scene: compare}
+      - {beat: diverge,   scene: compare}
+      - {beat: punchline, scene: kinetic, note: "one line, hard cut on"}
+
+palettes:
+  mono-paper:  {label: "Mono paper", mode: light, colors: {bg: "#c9c6bf", surface: "#e4e1da", paper: "#d8d4cc", ink: "#0d0d0d", fg: "#151515", muted: "#4a4740", dim: "#77736b", accent: "#d63a1f", accent2: "#1f1f1f"}}
+  studio-lime: {label: "Studio + lime", mode: light, colors: {bg: "#ececec", surface: "#f6f6f6", paper: "#f2f2f2", ink: "#2b2b2b", fg: "#333333", muted: "#5f5f5f", dim: "#8a8a8a", accent: "#9be15d", accent2: "#3a3a3a"}}
+  neon-amber:  {label: "Neon amber on black", mode: dark, colors: {bg: "#0f0f10", surface: "#17171a", paper: "#121214", ink: "#f5f5f5", fg: "#eeeeee", muted: "#9a9a9a", dim: "#5c5c5c", accent: "#f2b722", accent2: "#ffe600"}}
+  mono-glow:   {label: "White glow on black", mode: dark, colors: {bg: "#050505", surface: "#0e0e0e", paper: "#0a0a0a", ink: "#f5f5f5", fg: "#f0f0f0", muted: "#a0a0a0", dim: "#5a5a5a", accent: "#f5f5f5", accent2: "#8fb7ff"}}
+  warm-paper:  {label: "Warm paper + orange", mode: light, colors: {bg: "#f3ede2", surface: "#faf7f0", paper: "#f8f4ec", ink: "#1a1714", fg: "#1c1915", muted: "#58524a", dim: "#847c70", accent: "#d9481e", accent2: "#15858d"}}
+  mono-red:    {label: "Black + blood red", mode: dark, colors: {bg: "#000000", surface: "#0b0b0b", paper: "#060606", ink: "#ffffff", fg: "#f2f2f2", muted: "#6b6b6b", dim: "#3d3d3d", accent: "#b3202a", accent2: "#6b6b6b"}}
+  ocean-tech:  {label: "Deep blue tech", mode: dark, colors: {bg: "#07111f", surface: "#0d1b2e", paper: "#0a1626", ink: "#eaf2ff", fg: "#dce8fb", muted: "#8aa0bf", dim: "#4d6280", accent: "#3fa9ff", accent2: "#7cf2d4"}}
+  brand:       {label: "My brand colours", mode: auto, colors: {}}   # filled from the user's hex codes
+
+music_moods:
+  dark-drone:      {label: "Dark documentary drone", search: "dark ambient cinematic documentary", score: {key: D, mode: minor, progression: i-VI-III-VII, bpm: 120, drums: false}}
+  hiphop-groove:   {label: "Bass hip-hop groove", search: "hip hop beat corporate energetic", score: {key: F, mode: minor, progression: i-VII-VI-VII, bpm: 92, drums: true}}
+  dark-build:      {label: "Dark build-up", search: "dark build up tension", score: {key: E, mode: minor, progression: i-i-VI-VII, bpm: 100, drums: false}}
+  cinematic-swell: {label: "Cinematic swells", search: "cinematic emotional ambient swell", score: {key: C, mode: minor, progression: i-VI-III-VII, bpm: 80, drums: false}}
+  lofi-tech:       {label: "Lo-fi tech", search: "lofi chill tech background", score: {key: A, mode: dorian, progression: i-IV-i-VII, bpm: 85, drums: true}}
+  calm-pulse:      {label: "Calm pulse", search: "calm corporate minimal pulse", score: {key: D, mode: major, progression: I-V-vi-IV, bpm: 110, drums: true}}
+  phonk-loop:      {label: "Phonk / gym loop", search: "phonk trap gym", score: {key: G, mode: minor, progression: i-i-VI-VII, bpm: 140, drums: true}}
+  upbeat-promo:    {label: "Upbeat promo", search: "upbeat inspiring corporate", score: {key: G, mode: major, progression: I-V-vi-IV, bpm: 120, drums: true}}
+
+# Script mood -> defaults, used when the user picks "style default" (references/diagram-design.md)
+mood_map:
+  curious:      {style: paper-collage,        palette: mono-paper,  music: dark-drone,      delivery: calm}
+  bold:         {style: studio-kinetic,       palette: studio-lime, music: hiphop-groove,   delivery: punchy}
+  tension:      {style: neon-diagram,         palette: neon-amber,  music: dark-build,      delivery: punchy}
+  reflective:   {style: glow-metaphor,        palette: mono-glow,   music: cinematic-swell, delivery: cinematic}
+  practical:    {style: screen-explainer,     palette: ocean-tech,  music: lofi-tech,       delivery: calm}
+  technical:    {style: whiteboard-explainer, palette: warm-paper,  music: calm-pulse,      delivery: calm}
+  blunt:        {style: stick-fable,          palette: mono-red,    music: phonk-loop,      delivery: none}

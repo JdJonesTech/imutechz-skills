@@ -1,0 +1,23 @@
+title: Tidewell in 16 seconds
+bpm: 120
+scenes:
+  - id: hook
+    type: kinetic
+    params: {lines: ["Every drop,", "~counted.~"]}
+    say: "Every drop, counted."
+  - id: how
+    type: whiteboard
+    chapter: "01 · How it works"
+    transition: wipe
+    params:
+      tag: How it works
+      title: Roof, sensor, phone
+      flow: [Roof, Sensor, Phone]
+      take: "A reading every *15 minutes*."
+    say: "Rain hits the roof, a sensor counts it, and your phone gets a reading every 15 minutes."
+  - id: end
+    type: end
+    transition: fade
+    params: {name: Tidewell, tagline: "Every drop, counted.", links: [tidewell.example]}
+    say: "Tidewell. Fictional, but fully tested."
+thumbnail: {kicker: "Fish Video smoke test", title: "Every drop counted", accent: counted, badge: "16 seconds"}

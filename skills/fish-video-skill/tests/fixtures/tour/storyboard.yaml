@@ -1,0 +1,37 @@
+title: ImuTechz tour smoke test
+scenes:
+  - id: home
+    type: tour
+    params:
+      shot: home
+      url: imutechz.in
+      from: hero
+      speed: 1.2
+      eyebrow: Live capture
+      title: "The home page, filmed on *virtual time*."
+      bullets: ["real cursor, real hovers", "smooth canvas motion"]
+      cam: [{m: hero, z: 1.0}, {m: s1, z: 1.12, x: 720, y: 420}]
+      callouts:
+        - {text: "Captured *frame by frame*", t0: 1.0, len: 3.0, x: 0.5, y: 0.82}
+    say: "This is the ImuTechz home page, filmed live, one frame at a time."
+  - id: end
+    type: end
+    transition: wipe
+    params: {name: ImuTechz, tagline: "Open-source R&D, built in public.", links: [imutechz.in]}
+    say: "ImuTechz. Built in public."
+captures:
+  - id: home
+    url: http://localhost:3000/
+    viewport: {w: 1280, h: 720}
+    dpr: 1
+    settle: 2500
+    session: {imu-intro-played: "1"}
+    actions:
+      - {mark: hero}
+      - {hold: 24}
+      - {move: {x: 900, y: 420}, frames: 24}
+      - {hold: 20}
+      - {scroll: {by: 600}, frames: 40}
+      - {mark: s1}
+      - {move: {x: 520, y: 380}, frames: 24}
+      - {hold: 60}

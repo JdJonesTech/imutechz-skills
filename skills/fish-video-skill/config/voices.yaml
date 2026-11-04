@@ -1,0 +1,50 @@
+# Narrator shortlist offered in the interview (Round 4). The agent shows the 4 best
+# matches for the chosen language + delivery, and renders auditions BEFORE creation
+# starts:  fishvideo voices <dir> --audition   (same line, every shortlisted voice,
+# build/auditions/<id>.mp3; play/list them for the user, who picks one).
+#
+# Delivery presets set rate/pitch/post-processing so no voice sounds "stock":
+#   punchy    ~3.0 words/s, tighter compression, +presence    (Shorts storytelling)
+#   calm      ~2.4 words/s, warmer, a touch more room          (explainers)
+#   cinematic ~2.2 words/s, -2 st pitch, longer pauses, deeper (motivational / documentary)
+
+delivery:
+  punchy:    {edge_rate: "+2%",  edge_pitch: "+0Hz", eleven_speed: 1.08, eleven_style: 0.45, stability: 0.32, line_gap: 0.18, wps: 3.0,
+              post: "highpass=f=90,equalizer=f=250:t=q:w=1.2:g=-2.5,equalizer=f=5000:t=q:w=1.2:g=2.5,highshelf=f=9500:g=3,acompressor=threshold=-22dB:ratio=3.5:attack=5:release=90:makeup=3,aecho=0.9:0.9:18:0.05"}
+  calm:      {edge_rate: "-4%",  edge_pitch: "+0Hz", eleven_speed: 0.96, eleven_style: 0.2, stability: 0.45, line_gap: 0.32, wps: 2.4,
+              post: "highpass=f=80,equalizer=f=280:t=q:w=1.2:g=-2,equalizer=f=4800:t=q:w=1.4:g=1.5,highshelf=f=9000:g=2.5,acompressor=threshold=-20dB:ratio=2.5:attack=8:release=120:makeup=2,aecho=0.9:0.9:23|41:0.07|0.04"}
+  cinematic: {edge_rate: "-10%", edge_pitch: "-6Hz", eleven_speed: 0.9, eleven_style: 0.35, stability: 0.5, line_gap: 0.45, wps: 2.2,
+              post: "highpass=f=60,lowshelf=f=140:g=2,equalizer=f=320:t=q:w=1.2:g=-2,equalizer=f=4200:t=q:w=1.4:g=1.5,acompressor=threshold=-21dB:ratio=3:attack=10:release=160:makeup=2.5,aecho=0.85:0.9:40|73:0.12|0.07"}
+
+# provider: edge (free, needs internet, word timings) | elevenlabs (ELEVENLABS_API_KEY; paid plan
+# for commercial use and library voices) | kokoro (local, Apache-2.0, `pip install kokoro soundfile`;
+# word timings via faster-whisper alignment)
+voices:
+  en-US:
+    - {id: andrew,  provider: edge, voice: en-US-AndrewMultilingualNeural, label: "Andrew - warm, confident male", fits: [calm, punchy]}
+    - {id: brian,   provider: edge, voice: en-US-BrianMultilingualNeural,  label: "Brian - casual, sincere male", fits: [punchy, calm]}
+    - {id: ava,     provider: edge, voice: en-US-AvaMultilingualNeural,    label: "Ava - expressive, caring female", fits: [calm, punchy]}
+    - {id: emma,    provider: edge, voice: en-US-EmmaMultilingualNeural,   label: "Emma - cheerful, clear female", fits: [punchy]}
+    - {id: christopher, provider: edge, voice: en-US-ChristopherNeural,    label: "Christopher - deep authority male", fits: [cinematic]}
+    - {id: guy,     provider: edge, voice: en-US-GuyNeural,                label: "Guy - passionate male", fits: [cinematic, punchy]}
+    - {id: adam11,  provider: elevenlabs, voice: pNInz6obpgDQGcFmaJgB,     label: "ElevenLabs Adam - deep narrator (key)", fits: [cinematic, calm]}
+    - {id: kokoro_heart, provider: kokoro, voice: af_heart,                label: "Kokoro Heart - natural female (local)", fits: [calm]}
+    - {id: kokoro_michael, provider: kokoro, voice: am_michael,            label: "Kokoro Michael - natural male (local)", fits: [calm, cinematic]}
+  en-GB:
+    - {id: ryan,    provider: edge, voice: en-GB-RyanNeural,   label: "Ryan - British male", fits: [calm, cinematic]}
+    - {id: thomas,  provider: edge, voice: en-GB-ThomasNeural, label: "Thomas - British male, lighter", fits: [punchy, calm]}
+    - {id: sonia,   provider: edge, voice: en-GB-SoniaNeural,  label: "Sonia - British female", fits: [calm]}
+    - {id: libby,   provider: edge, voice: en-GB-LibbyNeural,  label: "Libby - British female, bright", fits: [punchy]}
+    - {id: kokoro_george, provider: kokoro, voice: bm_george,  label: "Kokoro George - British male (local)", fits: [cinematic, calm]}
+  en-IN:
+    - {id: neerja_x, provider: edge, voice: en-IN-NeerjaExpressiveNeural, label: "Neerja Expressive - Indian female", fits: [punchy, calm]}
+    - {id: prabhat,  provider: edge, voice: en-IN-PrabhatNeural,          label: "Prabhat - Indian male", fits: [calm, cinematic]}
+    - {id: eleven_in, provider: elevenlabs, voice: fydPJq00SigRIaPxWgiS,  label: "ElevenLabs India narrator (key, paid plan)", fits: [calm, punchy]}
+    - {id: neerja,   provider: edge, voice: en-IN-NeerjaNeural,           label: "Neerja - Indian female, neutral", fits: [calm]}
+  hi-IN:
+    - {id: madhur, provider: edge, voice: hi-IN-MadhurNeural, label: "Madhur - Hindi male", fits: [calm, punchy, cinematic]}
+    - {id: swara,  provider: edge, voice: hi-IN-SwaraNeural,  label: "Swara - Hindi female", fits: [calm, punchy]}
+
+audition_line:
+  en: "Most people never notice this. But once you see it, you can't unsee it."
+  hi: "ज़्यादातर लोग इसे कभी नोटिस नहीं करते। लेकिन एक बार देख लिया, तो भूल नहीं पाओगे।"

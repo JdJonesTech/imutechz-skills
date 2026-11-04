@@ -1,0 +1,11 @@
+# Fish Video Skill: Python side (orchestrator, research, voice, captions, render, QA, packaging)
+PyYAML>=6.0
+edge-tts>=6.1.10        # free neural TTS fallback with word timings (needs network)
+yt-dlp>=2024.8.6        # optional: download a reference video for analysis only
+pytest>=8.0             # tests
+numpy>=1.26             # dissect (reference analysis), QA mix balance, sample SFX placement
+Pillow>=10.0            # dissect frame sheets
+# optional extras (the interview offers them):
+#   rembg[cpu]            background removal for cut-outs (use model isnet-general-use; never the NC default)
+#   kokoro soundfile      local natural TTS (Apache-2.0)
+#   faster-whisper        align a user's own voiceover to captions
