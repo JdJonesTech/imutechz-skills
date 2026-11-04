@@ -23,7 +23,7 @@ FORBIDDEN_DIRS = {"node_modules", ".venv", "venv", "__pycache__", ".pytest_cache
 TEXT = {".md", ".py", ".mjs", ".js", ".jsx", ".ts", ".css", ".html", ".yaml", ".yml", ".json", ".txt", ".ini", ".example", ".toml", ".sh"}
 SECRET = re.compile(r"(sk-[A-Za-z0-9_-]{24,}|ghp_[A-Za-z0-9]{30,}|gho_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}|xox[bap]-[A-Za-z0-9-]{20,}|"
                     r"eyJhbGciOi[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)")
-MACHINE = re.compile(r"[A-Za-z]:[\\/]+Users[\\/]+[a-z0-9._-]+|/home/[a-z0-9._-]+/|/Users/[a-z0-9._-]+/")
+MACHINE = re.compile(r"[A-Za-z]:[\/]+Users[\/]+[a-z0-9_-][a-z0-9._-]*|/home/[a-z0-9_-][a-z0-9._-]*/|/Users/[a-z0-9_-][a-z0-9._-]*/")
 # placeholder-style paths in docs are fine
 MACHINE_OK = re.compile(r"Users[\\/]+(you|me|name|user|username|example)\b", re.I)
 
