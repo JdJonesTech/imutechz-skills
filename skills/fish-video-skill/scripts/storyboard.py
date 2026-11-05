@@ -420,6 +420,23 @@ def platforms_of(cfg: dict) -> list[str]:
     return plats
 
 
+def custom_scene_overrides(project: Path, sb: dict) -> list[str]:
+    """Warnings for project scene files that assign a built-in scene name (`S.pile = ...`, `SCENES["roadmap"] = ...`).
+    The project file loads last, so it silently replaces the built-in everywhere in the video. Source scan, so a heuristic."""
+    out = []
+    for rel in sb.get("custom_scenes") or []:
+        f = project / str(rel).lstrip("/")
+        if not f.is_file():
+            continue
+        src = f.read_text(encoding="utf-8", errors="replace")
+        for m in re.finditer(r"""\b(?:S|SCENES|window\.SCENES)\s*(?:\.\s*([A-Za-z_$][\w$]*)|\[\s*["']([^"']+)["']\s*\])\s*=(?!=)""", src):
+            name = m.group(1) or m.group(2)
+            if name in SCENE_TYPES:
+                out.append(f"{rel}: defines scene {name!r}, which REPLACES the built-in {name!r} scene for every scene of that type "
+                           f"in this video. Rename it if that is not intended.")
+    return sorted(set(out))
+
+
 def build(project: Path, *, quiet: bool = False) -> dict:
     """Validate the storyboard and write every timeline + captures.json."""
     project = ensure_project(project)
@@ -429,6 +446,7 @@ def build(project: Path, *, quiet: bool = False) -> dict:
         raise FishError("no storyboard.yaml: run `fishvideo script` (scaffold) or write one from templates/storyboard.yaml")
     sb = load_yaml(sbf)
     errors, warns = validate(sb, cfg)
+    warns += custom_scene_overrides(project, sb)
     for w in warns:
         warn(w)
     if errors:

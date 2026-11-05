@@ -272,20 +272,41 @@ def meme_checks(project: Path) -> list[dict]:
     return [{"check": "meme lint", "status": "FAIL" if bad else "WARN", "detail": "; ".join(f"{f['scene']}: {f['msg']}" for f in found[:4])}]
 
 
-def bare_regions(video: Path, hold: float = 2.0, flat: float = 3.0) -> dict:
-    """WARN when a quarter of the frame stays flat for `hold` seconds or more: a likely empty part of the frame.
-    Measured on a 32x18 greyscale proxy, sampled once a second, so thin background grid lines do not count as content."""
+def flat_regions(frames, fps: float = 2.0, hold: float = 1.5, flat: float = 3.0, fg_min: float = 0.02, dev: float = 16.0) -> list[str]:
+    """Pure core of `bare_regions`. `frames` is an (N, H, W) greyscale array sampled at `fps`.
+    A quarter (or the whole frame) is EMPTY in a sample when it is flat (std < `flat`) or has almost no foreground: fewer than
+    `fg_min` of its pixels differ from its own median by more than `dev` levels, so a faint grid or ghost map does not count as content.
+    Reports a region once it is empty for `hold` seconds in a row."""
+    import math
     import numpy as np
-    W, H = 32, 18
-    raw = subprocess.run([ffmpeg_bin(), "-v", "error", "-i", str(video), "-vf", f"fps=1,scale={W}:{H},format=gray", "-f", "rawvideo", "-"], capture_output=True, check=True).stdout
-    frames = np.frombuffer(raw, dtype=np.uint8).reshape(-1, H, W).astype(float)
-    runs, found = [0, 0, 0, 0], []
+    n, H, W = frames.shape
+    need = max(1, math.ceil(hold * fps - 1e-9))
+    names = ["top-left", "top-right", "bottom-left", "bottom-right", "whole frame"]
+    runs, found = [0] * 5, []
+
+    def empty(part) -> bool:
+        return bool(part.std() < flat or float((np.abs(part - np.median(part)) > dev).mean()) < fg_min)
+
     for t, f in enumerate(frames):
-        for q, part in enumerate((f[1:H // 2 - 1, 1:W // 2 - 1], f[1:H // 2 - 1, W // 2 + 1:-1], f[H // 2 + 1:-1, 1:W // 2 - 1], f[H // 2 + 1:-1, W // 2 + 1:-1])):  # the seams blend in the proxy
-            runs[q] = runs[q] + 1 if part.std() < flat else 0
-            if runs[q] == int(hold) + 1:
-                found.append(f"{t - int(hold)}s {['top-left', 'top-right', 'bottom-left', 'bottom-right'][q]}")
-    return {"check": "bare frame", "status": "PASS" if not found else "WARN", "detail": "no quarter of the frame stays empty" if not found else f"{len(found)} flat regions, open these frames: {found[:8]}"}
+        parts = (f[1:H // 2 - 1, 1:W // 2 - 1], f[1:H // 2 - 1, W // 2 + 1:-1], f[H // 2 + 1:-1, 1:W // 2 - 1], f[H // 2 + 1:-1, W // 2 + 1:-1], f[1:-1, 1:-1])
+        for q, part in enumerate(parts):
+            runs[q] = runs[q] + 1 if empty(part) else 0
+            if runs[q] == need:
+                found.append(f"{(t - need + 1) / fps:.1f}s {names[q]}")
+    return found
+
+
+def bare_regions(video: Path, hold: float = 1.5, flat: float = 3.0, fps: float = 2.0) -> dict:
+    """WARN when a quarter of the frame, or the whole frame, stays empty for `hold` seconds or more.
+    Sampled twice a second on a 64x36 greyscale proxy. This is a heuristic, NOT proof the frames are good: it cannot tell a deliberate
+    title card from a gap, and a busy background can hide an empty foreground. Always open the contact sheet or frame sheet."""
+    import numpy as np
+    W, H = 64, 36
+    raw = subprocess.run([ffmpeg_bin(), "-v", "error", "-i", str(video), "-vf", f"fps={fps},scale={W}:{H}:flags=area,format=gray", "-f", "rawvideo", "-"], capture_output=True, check=True).stdout
+    frames = np.frombuffer(raw, dtype=np.uint8).reshape(-1, H, W).astype(float)
+    found = flat_regions(frames, fps, hold, flat)
+    return {"check": "bare frame", "status": "PASS" if not found else "WARN",
+            "detail": "no quarter of the frame stays empty (heuristic: still open the frame sheet)" if not found else f"{len(found)} empty regions, open these frames: {found[:8]}"}
 
 
 def qa_platform(project: Path, platform: str, lint: bool = True, preview: bool = False) -> dict:

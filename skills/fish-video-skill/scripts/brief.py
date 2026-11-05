@@ -115,9 +115,17 @@ def parse_prompt(prompt: str) -> dict:
         if m:
             subj = URL.sub("", m.group(1))
             subj = re.split(r"\b(for|in|with|on|at|using|under|as)\b", subj, flags=re.I)[0].strip(" -:")
-            if subj:
+            if subj and norm_words(subj) - FILLER_TITLE_WORDS:
                 out["title"] = subj[:80]
     return out
+
+
+FILLER_TITLE_WORDS_SRC = "this that it its these those them they the a an my our your his her their one some any"
+FILLER_TITLE_WORDS = set(FILLER_TITLE_WORDS_SRC.split())
+
+
+def norm_words(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9']+", text.lower()))
 
 
 def make_brief(prompt: str = "", **over) -> dict:
@@ -127,7 +135,6 @@ def make_brief(prompt: str = "", **over) -> dict:
     b = deep_merge(b, {k: v for k, v in over.items() if v not in (None, "", [], {})})
     if not b.get("title"):
         b["title"] = (b.get("brand") or {}).get("name") or "Untitled video"
-    b["slug"] = b.get("slug") or slugify(b["title"])
     return b
 
 

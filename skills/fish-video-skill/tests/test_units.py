@@ -41,7 +41,7 @@ def test_make_brief_has_default_elevenlabs_voice():
     assert b["voice"]["provider"] == "elevenlabs"
     assert b["voice"]["elevenlabs"]["voice_id"] == "fydPJq00SigRIaPxWgiS"
     assert b["voice"]["fallback"]["voice"] == "en-IN-NeerjaNeural"
-    assert b["length"] == 30 and b["slug"]
+    assert b["length"] == 30 and b["title"]
 
 
 # ------------------------------------------------------------------ narration markup
@@ -402,3 +402,112 @@ def test_sfx_levels_from_the_brief_apply_to_custom_cue_types(tmp_path):
     data = (b / "sfx-samples.wav").read_bytes()
     peak = np.abs(np.frombuffer(data[data.find(b"data") + 8:], dtype="<f4")).max()
     assert abs(20 * np.log10(peak) - (-6)) < 0.2
+
+
+def test_mix_ffmpeg_hang_is_killed_retried_then_reported(monkeypatch):
+    """A stalled mix ffmpeg (0% CPU, never exits) must not hang render: timeout, one retry, actionable error."""
+    import sys
+    import render
+    calls = []
+    real = fvcore.run
+    def fake(cmd, **kw):                 # stands in for ffmpeg: a process that sleeps forever
+        calls.append(kw.get("timeout"))
+        return real([sys.executable, "-c", "import time; time.sleep(60)"], **kw)
+    monkeypatch.setattr(render, "run", fake)
+    with pytest.raises(fvcore.FishError) as e:
+        render._run_mix(["ffmpeg"], 5.0, timeout=0.5)
+    assert calls == [0.5, 0.5]
+    assert "FISH_MIX_TIMEOUT" in str(e.value)
+
+
+def test_mix_ffmpeg_retry_recovers_after_one_stall(monkeypatch):
+    import sys
+    import render
+    real, n = fvcore.run, []
+    def fake(cmd, **kw):
+        n.append(1)
+        code = "import time; time.sleep(60)" if len(n) == 1 else "pass"
+        return real([sys.executable, "-c", code], **kw)
+    monkeypatch.setattr(render, "run", fake)
+    render._run_mix(["ffmpeg"], 5.0, timeout=0.5)
+    assert len(n) == 2
+
+
+def _synth(n, fn, H=36, W=64):
+    import numpy as np
+    return np.stack([fn(i) for i in range(n)]).astype(float)
+
+
+def _busy(seed=0, H=36, W=64):
+    import numpy as np
+    return np.random.default_rng(seed).integers(40, 220, (H, W)).astype(float)
+
+
+def test_flat_regions_catches_a_two_second_empty_half():
+    import qa
+    def f(i):                                   # 4 s at 2 fps; bottom half empty from 1.0 s to 3.0 s (4 samples = 2 s)
+        a = _busy(i); 
+        if 2 <= i < 6: a[18:, :] = 20
+        return a
+    got = qa.flat_regions(_synth(8, f), fps=2, hold=1.5)
+    assert any("bottom-left" in g for g in got) and any("bottom-right" in g for g in got)
+
+
+def test_qa_bare_regions_finds_a_two_second_empty_half(tmp_path):
+    """Regression: three one-second samples in a row were required, so a 2 s empty half passed."""
+    import qa
+    ff = fvcore.ffmpeg_bin()
+    v = tmp_path / "gap.mp4"
+    subprocess.run([ff, "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=10:d=6", "-vf",
+                    "drawbox=x=0:y=90:w=320:h=90:color=black:t=fill:enable='between(t,2,4)'", "-pix_fmt", "yuv420p", str(v)], check=True)
+    assert qa.bare_regions(v)["status"] == "WARN"
+
+
+def test_flat_regions_catches_nearly_blank_frames_over_a_faint_grid():
+    import numpy as np
+    import qa
+    def f(i):
+        a = np.full((36, 64), 30.0); a[::4, :] += 8; a[:, ::4] += 8     # faint grid: std > 3, so a plain flatness test misses it
+        a[17:19, 24:40] = 240                                           # a title only
+        return a
+    assert _synth(1, f)[0][1:16, 1:31].std() > 3
+    got = qa.flat_regions(_synth(8, f), fps=2, hold=1.5)
+    assert any("top-left" in g for g in got)
+
+
+def test_flat_regions_no_false_positive_on_fades_or_busy_frames():
+    import qa
+    def fade(i):                                # 1 s fade in from black at 2 fps: only 2 dark samples, under the 1.5 s hold
+        k = min(1.0, i / 2.0)
+        return _busy(i) * k
+    frames = _synth(10, fade)
+    assert qa.flat_regions(frames, fps=2, hold=1.5) == []
+    assert qa.flat_regions(_synth(10, lambda i: _busy(i)), fps=2, hold=1.5) == []
+
+
+def test_custom_scene_that_replaces_a_builtin_is_warned(tmp_path):
+    (tmp_path / "scenes").mkdir()
+    (tmp_path / "scenes" / "custom.js").write_text(
+        '(() => { const S = (window.SCENES = window.SCENES || {});\n S.pile = { build() {} };\n S["roadmap"] = {};\n S.mything = {}; })();', encoding="utf-8")
+    w = sb.custom_scene_overrides(tmp_path, {"custom_scenes": ["scenes/custom.js"]})
+    assert len(w) == 2 and any("'pile'" in x for x in w) and any("'roadmap'" in x for x in w)
+    assert not any("mything" in x for x in w)
+    assert sb.custom_scene_overrides(tmp_path, {}) == []
+
+
+def test_factcheck_skips_decorative_glyphs_but_not_real_numbers():
+    sbd = {"scenes": [{"id": "a", "type": "roadmap", "say": "Plain words.", "params": {"nodes": [
+        {"label": "Embed", "glyph": "0.12"},                                   # decorative by field
+        {"label": "Ghost 7777", "decorative": True},                           # decorative by flag
+        {"label": "Real 4242"}]}}]}
+    got = {n for _, _, n in research.claims_in(sbd)}
+    assert "4242" in got and "0.12" not in got and "7777" not in got
+
+
+def test_package_slug_follows_the_current_title_not_the_prompt():
+    b = brief.make_brief("A 20 s explainer about this")
+    assert b["title"] != "this" and "slug" not in b          # a filler word is no title; no stale slug is saved
+    b["title"] = "How Vector Search Works"
+    assert package.package_slug(b) == "how-vector-search-works"
+    b["title"] = "Renamed Later"
+    assert package.package_slug(b) == "renamed-later"

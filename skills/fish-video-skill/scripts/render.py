@@ -122,6 +122,23 @@ def prepare_track(track: Path, build: Path, duration: float, fade: float = 1.5, 
     return out
 
 
+def _run_mix(cmd: list, duration: float, timeout: float | None = None, tries: int = 2) -> None:
+    """Run the stem-mix ffmpeg with a timeout. It has been seen to stall at end of stream (0% CPU, output complete),
+    so a hung attempt is killed and retried once; after that the error says what to do. Never waits forever."""
+    import os
+    limit = timeout or float(os.environ.get("FISH_MIX_TIMEOUT") or max(120.0, duration * 4))
+    for n in range(1, tries + 1):
+        try:
+            run(cmd, timeout=limit)
+            return
+        except FishError as e:
+            if "timed out" not in str(e):
+                raise
+            log(f"mix ffmpeg stalled (attempt {n}/{tries}, {limit:.0f}s)")
+    raise FishError(f"the audio mix ffmpeg stalled {tries} times (no result in {limit:.0f}s each). Re-run `fishvideo render`; "
+                    f"it resumes from build/. If it persists, raise FISH_MIX_TIMEOUT (seconds) or run with fewer sfx/music stems.")
+
+
 def mix_audio(build: Path, music: Path | None, voice: Path | None, duration: float, mixcfg: dict, prof: dict,
               sfx: list[Path] | None = None) -> Path:
     """Three stems -> loudness-normalised 48 kHz stereo WAV (references/sound-design.md).
@@ -194,7 +211,7 @@ def mix_audio(build: Path, music: Path | None, voice: Path | None, duration: flo
     args = [ff, "-y", "-loglevel", "error"]
     for i in inputs:
         args += ["-i", str(i)]
-    run(args + ["-filter_complex_script", str(graph), "-map", "[out]", "-ar", "48000", "-c:a", "pcm_f32le", str(raw)])
+    _run_mix(args + ["-filter_complex_script", str(graph), "-map", "[out]", "-ar", "48000", "-c:a", "pcm_f32le", str(raw)], duration)
     save_json(build / "mix.json", {"voice_lufs_target": vl if voice else None,
                                    "music_offset_db": mixcfg.get("music_under_voice_db", -10) if (voice and music) else None,
                                    "music": str(music) if music else None, "sfx_stems": [str(s) for s in sfx],

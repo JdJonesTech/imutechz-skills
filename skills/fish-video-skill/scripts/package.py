@@ -100,11 +100,17 @@ def credits_text(project: Path, voice: dict, music_note: str) -> str:
     return "\n".join(lines)
 
 
+def package_slug(brief: dict) -> str:
+    """The file/folder slug follows the CURRENT brief.title, so renaming the title renames the package.
+    (A slug saved at brief creation went stale: it kept the first words of the prompt.) Use `package_name` to pin a folder name."""
+    return slugify(brief.get("title") or brief.get("slug") or "video")
+
+
 def package(project: Path, out: Path | None = None, name: str | None = None) -> Path:
     project = ensure_project(project)
     cfg = project_config(project)
     brief = cfg["brief"]
-    slug = brief.get("slug") or slugify(brief.get("title", "video"))
+    slug = package_slug(brief)
     folder = name or brief.get("package_name") or f"{time.strftime('%Y-%m-%d')}_{slug}"
     dest = Path(out or project / "out") / folder
     for sub in ("video", "captions", "thumbnails", "metadata", "qa"):

@@ -239,3 +239,34 @@ def test_prep_clip_lut_and_errors(smoke_project, tmp_path):
         assets.clip_filters(30, 320, grade="sepia")
     with pytest.raises(Exception):
         assets.clip_filters(30, 320, lut=tmp_path / "missing.cube")
+
+
+def test_voiceover_cli_words_file_skips_transcription(smoke_project, tmp_path, monkeypatch):
+    import json
+    lines = project_lines(smoke_project)
+    words, total = fake_words(lines)
+    wf = tmp_path / "words.json"
+    wf.write_text(json.dumps({"words": [{"word": w["text"], "start": w["start"], "end": w["end"]} for w in words]}), encoding="utf-8")
+    rec = tmp_path / "rec.wav"
+    write_f32(rec, np.zeros(int((total + 1) * SR)))
+    def boom(*a, **k):
+        raise AssertionError("must not transcribe when --words is given")
+    monkeypatch.setattr(voiceover, "transcribe", boom)
+    assert voiceover.cli([str(smoke_project), str(rec), "--words", str(wf)]) == 0
+    clips = load_json(smoke_project / "build" / "voice" / "clips.json")
+    assert set(clips["clips"]) == {ln["id"] for ln in lines}
+
+
+def test_voiceover_words_file_is_validated(tmp_path):
+    import json
+    from fvcore import FishError
+    bad = tmp_path / "w.json"
+    for payload in ('{"nope": 1}', "[]", '[{"text": "a"}]', '[{"text": "a", "start": 2, "end": 1}]', "not json",
+                    '[{"text": "a", "start": 5, "end": 6}, {"text": "b", "start": 1, "end": 2}]'):
+        bad.write_text(payload, encoding="utf-8")
+        with pytest.raises(FishError):
+            voiceover.load_words(bad)
+    with pytest.raises(FishError):
+        voiceover.load_words(tmp_path / "missing.json")
+    bad.write_text(json.dumps([{"word": "Hi", "start": 0, "end": 0.2}, {"text": "...", "start": 0.2, "end": 0.3}]), encoding="utf-8")
+    assert voiceover.load_words(bad) == [{"text": "Hi", "start": 0.0, "end": 0.2}]

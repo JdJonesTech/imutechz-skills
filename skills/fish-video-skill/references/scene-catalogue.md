@@ -255,6 +255,9 @@ A static 1280×720 composition (the `thumbnail:` block in the storyboard).
 ## Writing a custom scene (checklist)
 
 - [ ] Put it in `<project>/scenes/custom.js` and list it in `custom_scenes`. Listing any custom scene lets the validator accept types it does not know, so check the spelling of your scene types.
+- [ ] Do not reuse a built-in scene name (`pile`, `roadmap`, ...): your file loads last and replaces the built-in for the whole video. `storyboard` warns when it finds this.
+- [ ] If a scene reveals items on spoken words, show them DIMMED (opacity about 0.14) from the first frame and light each on its word. Do not start empty: the first word can land seconds in, and the frame sits bare. Built-in scenes already do this or fall back to beat times; there is no shared wrapper, because each scene owns its own reveal.
+- [ ] Mark drawn numbers that are not claims (a glyph standing for an embedding) with `glyph: ...` or `decorative: true` on the item, so `research check` skips them.
 - [ ] Lay out inside `c.safe`. Size type as `N * c.u`. Fit headlines.
 - [ ] Make `update` a pure function of `t`. Use no timers, no `Math.random`, no CSS transitions.
 - [ ] Load images through `L.setImg`, which waits for the decode.

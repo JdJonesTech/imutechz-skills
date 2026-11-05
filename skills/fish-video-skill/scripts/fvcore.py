@@ -175,13 +175,17 @@ def browser_bin() -> str | None:
 
 
 # ------------------------------------------------------------------ processes
-def run(cmd: list[str], *, cwd: Path | None = None, capture: bool = False, check: bool = True, env: dict | None = None) -> subprocess.CompletedProcess:
-    """Run a command; raise FishError with its stderr tail when it fails."""
+def run(cmd: list[str], *, cwd: Path | None = None, capture: bool = False, check: bool = True, env: dict | None = None,
+        timeout: float | None = None) -> subprocess.CompletedProcess:
+    """Run a command; raise FishError with its stderr tail when it fails or exceeds `timeout` seconds (the child is killed)."""
     e = dict(os.environ)
     if env:
         e.update(env)
-    r = subprocess.run([str(c) for c in cmd], cwd=str(cwd) if cwd else None, env=e,
-                       capture_output=capture, text=True, encoding="utf-8", errors="replace")
+    try:
+        r = subprocess.run([str(c) for c in cmd], cwd=str(cwd) if cwd else None, env=e,
+                           capture_output=capture, text=True, encoding="utf-8", errors="replace", timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise FishError(f"command timed out after {timeout:.0f}s and was killed: {' '.join(map(str, cmd[:4]))} ...") from None
     if check and r.returncode != 0:
         tail = ((r.stderr or "") + (r.stdout or ""))[-1500:] if capture else ""
         raise FishError(f"command failed ({r.returncode}): {' '.join(map(str, cmd[:4]))} ...\n{tail}")
