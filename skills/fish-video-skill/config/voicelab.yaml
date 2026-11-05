@@ -1,0 +1,122 @@
+# Local voice studio: free voices made on this machine.
+#   fishvideo voice setup | engines | say | audition | check | redo | measure      (references/local-voices.md)
+# Choose it in brief.yaml:
+#   voice: {provider: chatterbox, studio: {gender: female, style: airy, pace: natural}}
+# Every number here is a starting point taken from measurements on a CPU-only desktop.
+# No tool in this skill can hear. Audition the result before you use it.
+
+engines:
+  chatterbox:                 # MIT. English. Emotion control. Every file carries the PerTh watermark.
+    python: "3.11"
+    packages: ["chatterbox-tts==0.1.7", "setuptools<81", "faster-whisper==1.2.1"]
+    torch: ["torch==2.6.0", "torchaudio==2.6.0"]
+  kokoro:                     # Apache-2.0 weights. Fast on a CPU. Preset voices. No emotion control.
+    python: "3.12"
+    packages: ["kokoro==0.9.4", "misaki[en]==0.9.4", "soundfile", "faster-whisper==1.2.1"]
+    torch: ["torch"]
+
+whisper_model: small.en       # word timings and the transcript check; "small" is used for other languages
+
+defaults: {engine: chatterbox, gender: male, style: soft, pace: natural, seed: 11, temperature: 0.75}
+
+# A voice is labelled by its measured pitch, never by ear. Median F0 below `split_hz` reads as male.
+genders:
+  split_hz: 165
+  builtin: {chatterbox: male}                 # measured median F0 of Chatterbox's built-in voice: see the reference doc
+  male:   {kokoro: {a: am_michael, b: bm_george}}
+  female: {kokoro: {a: af_heart, b: bf_emma}}
+
+# Pace = spoken words per second over the whole line, pauses included.
+paces:
+  slow:    {wps: 2.5, cfg_weight: 0.22, speed: 0.88, pause_scale: 1.25}
+  natural: {wps: 2.9, cfg_weight: 0.28, speed: 1.0,  pause_scale: 1.0}
+  fast:    {wps: 3.3, cfg_weight: 0.42, speed: 1.12, pause_scale: 0.75}
+
+# exaggeration: Chatterbox emotion intensity for a plain sentence. pause: seconds between sentences.
+# air: allowed band for energy above 6 kHz relative to the whole signal, in dB (too high sounds hissy).
+styles:
+  airy:
+    exaggeration: 0.42
+    cfg_shift: -0.03
+    pause: 0.47
+    air: [-30, -17]
+    post: "highpass=f=75,equalizer=f=280:t=q:w=1.1:g=-2,equalizer=f=3200:t=q:w=1.4:g=0.8,aexciter=freq=6500:amount=0.5:blend=0:ceil=11500,highshelf=f=8000:g=1.5,deesser=i=0.35,acompressor=threshold=-20dB:ratio=1.8:attack=15:release=180:makeup=1.2,aecho=0.9:0.9:19|37:0.04|0.025"
+  soft:
+    exaggeration: 0.34
+    cfg_shift: -0.03
+    pause: 0.52
+    air: [-40, -22]
+    post: "highpass=f=70,equalizer=f=260:t=q:w=1.1:g=-1.5,highshelf=f=9000:g=-1,acompressor=threshold=-22dB:ratio=1.6:attack=20:release=200:makeup=1"
+  warm:
+    exaggeration: 0.45
+    pause: 0.42
+    air: [-40, -22]
+    post: "highpass=f=70,lowshelf=f=170:g=1.5,equalizer=f=3000:t=q:w=1.4:g=0.6,acompressor=threshold=-21dB:ratio=1.8:attack=15:release=180:makeup=1"
+  calm:
+    exaggeration: 0.36
+    pause: 0.55
+    air: [-40, -22]
+    post: "highpass=f=75,equalizer=f=280:t=q:w=1.2:g=-2,acompressor=threshold=-21dB:ratio=1.7:attack=15:release=180:makeup=1"
+  energetic:
+    exaggeration: 0.62
+    cfg_shift: 0.05
+    pause: 0.3
+    air: [-36, -19]
+    post: "highpass=f=85,equalizer=f=250:t=q:w=1.2:g=-2.5,equalizer=f=4500:t=q:w=1.3:g=1.5,highshelf=f=9000:g=1,acompressor=threshold=-22dB:ratio=2.5:attack=8:release=120:makeup=1.5"
+  emotional:
+    exaggeration: 0.68
+    temperature: 0.9
+    pause: 0.47
+    air: [-36, -19]
+    post: "highpass=f=75,equalizer=f=280:t=q:w=1.1:g=-2,equalizer=f=3200:t=q:w=1.4:g=0.8,highshelf=f=8500:g=1,deesser=i=0.3,acompressor=threshold=-20dB:ratio=1.8:attack=15:release=180:makeup=1.2"
+  cinematic:
+    exaggeration: 0.48
+    cfg_shift: -0.05
+    pause: 0.62
+    air: [-42, -22]
+    post: "highpass=f=60,lowshelf=f=140:g=2,equalizer=f=320:t=q:w=1.2:g=-2,equalizer=f=4200:t=q:w=1.4:g=1,acompressor=threshold=-21dB:ratio=2:attack=12:release=200:makeup=1.2,aecho=0.9:0.9:23|41:0.05|0.03"
+
+# How a sentence's punctuation and its scene's `mood:` move the emotion and the pause after it.
+punctuation: {exclaim: 0.13, question: 0.05, ellipsis: -0.08}
+moods:
+  neutral:    {exaggeration: 0.0,   pause: 1.0}
+  curious:    {exaggeration: 0.05,  pause: 1.0}
+  tense:      {exaggeration: 0.04,  pause: 1.1}
+  urgent:     {exaggeration: 0.14,  pause: 0.8}
+  excited:    {exaggeration: 0.18,  pause: 0.85}
+  warm:       {exaggeration: 0.0,   pause: 1.05}
+  serious:    {exaggeration: -0.06, pause: 1.15}
+  reflective: {exaggeration: -0.1,  pause: 1.3}
+  triumphant: {exaggeration: 0.16,  pause: 0.95}
+
+# Closed-loop pace: measure, then move the pauses, then a small time-stretch, then one regeneration.
+pace_control:
+  tolerance: 0.15            # words per second either side of the target
+  min_words: 6               # shorter lines are too noisy to steer
+  pause_range: [0.15, 0.9]
+  max_stretch: 0.06
+  max_rounds: 1              # regenerations with a changed engine setting (slow on a CPU)
+  cfg_per_wps: 0.28          # Chatterbox: change in cfg_weight per word/second of articulation rate
+  cfg_range: [0.15, 0.65]
+  speed_range: [0.7, 1.4]    # Kokoro
+
+level: {speech_rms_db: -23, peak_max: 0.89}
+edges: {head: 0.08, tail: 0.12}
+
+# The clip Kokoro speaks when Chatterbox needs a reference voice of the other gender (made at run time, never shipped).
+reference:
+  text: "Here is a short sample of my voice, speaking at an easy pace. I keep the tone even and clear, so every word is simple to follow."
+  speed: 1.0
+
+# `fishvideo voice check`. A take is regenerated with a new seed when its transcript does not match.
+check:
+  retries: 2
+  variant_similarity: 0.8    # a differing word this close in letters counts as a spelling variant: flagged, not regenerated
+  pace_band: [1.8, 4.2]      # used when no target pace is known (other providers)
+  pause_min: 0.2
+  clip_run: 8                # consecutive full-scale samples
+  loudness_spread_db: 4
+  edge_silence_max: 0.45
+  seconds_per_word: [0.14, 0.95]
+  drift_warn: 0.12           # a line's median pitch against the narration's, as a fraction
+  drift_fail: 0.25

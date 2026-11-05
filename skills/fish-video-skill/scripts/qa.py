@@ -274,6 +274,11 @@ def qa_platform(project: Path, platform: str, lint: bool = True, preview: bool =
         res.append({"check": "captions", "status": "PASS" if not issues else "FAIL", "detail": f"{len(cues)} cues" + (f"; {issues[:4]}" if issues else "")})
         est = [v["id"] for v in tl["voice_lines"] if v.get("estimated")]
         res.append({"check": "voice", "status": "PASS" if not est else "WARN", "detail": "all lines voiced" if not est else f"{len(est)} lines timed by estimate (no TTS)"})
+    try:                                          # local voice studio checks; skipped unless the narration came from it
+        import voicelab
+        res += voicelab.qa_rows(project)
+    except ImportError:
+        pass
     # mix balance: the bed must stay audible in the gaps and sit under the voice (references/sound-design.md)
     res.append(mix_balance(video, narr, b / "mix.json"))
     # phone speakers: also writes build/<platform>/phone-monitor.wav, a file to listen to what a phone plays
