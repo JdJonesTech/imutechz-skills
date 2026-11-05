@@ -141,7 +141,7 @@ All three produce the same capture folder. The `tour` scene (`frame: inset`) add
 
 **SFX:** run `fishvideo assets sfx-pack` once (Kenney CC0). Add more with `assets search --kind sfx` (Freesound CC0) into `assets/sfx/<cue-type>/`.
 
-**Voice:** write the narration (step 4), then run `fishvideo voice <dir>`. Re-run the storyboard so scenes re-time to the real clips. If the user recorded their own narration, run `fishvideo voiceover <dir> recording.wav` instead: it aligns the recording to the script with faster-whisper and cuts it per line.
+**Voice:** write the narration (step 4), then run `fishvideo voice <dir>`. Re-run the storyboard so scenes re-time to the real clips. If the user recorded their own narration, run `fishvideo voiceover <dir> recording.wav` instead: it aligns the recording to the script with faster-whisper and cuts it per line. Without `faster-whisper`, transcribe elsewhere and add `--words words.json`.
 
 **Emotion:** give each scene a `mood:` (`curious`, `tense`, `urgent`, `excited`, `warm`, `serious`, `reflective`, `triumphant`, `neutral`). It sets speed and pitch per line, and style on ElevenLabs. Punctuation shapes the delivery on every engine: `...` pauses, `?` and `!` lift, short sentences punch. Vary mood across beats: one flat tone for 40 seconds is the "generic voice" complaint. Silent stretches inside a line are cut automatically (`pacing.max_word_gap`).
 
@@ -304,7 +304,7 @@ Never delete without that yes.
 | Looks flat, like a template | Vector boxes only, no assets, no texture | Real cut-outs (`assets cutout`), `texture: paper/grain`, contact shadows, glow; collage/split/neon scenes |
 | A generic narrator | Fixed default voice | A delivery preset plus auditions in the interview, with ElevenLabs, Kokoro and edge Multilingual voices |
 | A planned sound never plays | Explicit `cues:` were dropped before the stage | Fixed; QA now fails if a hand-placed cue is missing. Measure the SFX stem to confirm |
-| Half the frame sits empty, QA still passes | Technical checks cannot see it | Tile the video and open the sheet; `qa` warns on flat regions |
+| Half the frame sits empty, QA still passes | Technical checks cannot see it. The `bare frame` check is a heuristic (twice a second, 1.5 s): it misses busy backgrounds and cannot tell a title card from a gap | ALWAYS tile the video and open the frame sheet, whatever `qa` says |
 | Imported voiceover lost its pauses | `pacing.max_word_gap` trims them | Raise it for a performance you approved |
 | Soft zooms in screen tutorials | Recorded at 1× | `screenrec --scale 2`, `capture` at DPR 2 |
 | Captions unreadable over busy frames | No plate | `captions.style: pop` adds an automatic 40% plate |

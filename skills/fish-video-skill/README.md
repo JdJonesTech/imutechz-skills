@@ -6,6 +6,12 @@ It is an agent skill: `SKILL.md` is what an AI agent reads. It also works as a p
 
 Videos are rendered from code. Every frame is a pure function of time, drawn in headless Chromium and encoded with ffmpeg, so renders are deterministic and parallel. Real assets can be mixed in: licensed photos, b-roll, music and SFX, plus your own screen recordings, each one logged with its licence. No number appears on screen without a source.
 
+## Follow-up fixes
+
+- `render`: the stem-mix ffmpeg has a timeout (`FISH_MIX_TIMEOUT`, default 4x the video length, at least 120 s) with one retry and an actionable error, instead of hanging.
+- `qa` `bare frame`: samples twice a second, flags 1.5 s, also catches near-blank frames over a faint background. Still a heuristic: open the frame sheet.
+- `voiceover --words words.json`; a warning when a project scene replaces a built-in; `glyph` / `decorative: true` skip the fact check; the package slug follows `brief.title`.
+
 ## What's new in 2.3
 
 - **Memes and real assets** (`references/memes-and-real-assets.md`): `memes` (templates, trending, films, add, sheet, cut, caption, lint), `sounds` (synth, search, add, list, audition) and `assets shot|logo|icon|emoji`.

@@ -200,13 +200,20 @@ TEXT_KEYS = {"title", "subtitle", "kicker", "text", "lines", "items", "label", "
              "eyebrow", "bullets", "value", "data", "left", "right", "nodes", "sub", "flow", "notes", "chips", "badge", "html"}
 
 
+DECORATIVE_KEYS = {"glyph"}     # drawn symbols (a "0.12" standing for an embedding), not claims; any dict with `decorative: true` is skipped too
+
+
 def claims_in(sb: dict) -> list[tuple[str, str, str]]:
     """(scene id, field, number) for every number on screen or in narration."""
     out = []
 
     def walk(sid, key, v):
         if isinstance(v, dict):
+            if v.get("decorative") is True:
+                return
             for k, x in v.items():
+                if k in DECORATIVE_KEYS:
+                    continue
                 if k in TEXT_KEYS or (key in ("data", "items", "nodes", "left", "right", "lines") and k not in GEOM_KEYS):
                     walk(sid, k, x)
         elif isinstance(v, list):

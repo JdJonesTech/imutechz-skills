@@ -1,6 +1,10 @@
 """Use your own recorded narration instead of a synthetic voice.
 
-    python scripts/voiceover.py <project> <recording.wav|mp3|m4a> [--model small]
+    python scripts/voiceover.py <project> <recording.wav|mp3|m4a> [--model small] [--words words.json]
+
+`--words` skips transcription and uses a word list made elsewhere (another machine or Python, where faster-whisper
+works): a JSON list of {"text", "start", "end"} in seconds of THIS recording (whisper-style "word" is accepted for "text";
+a {"words": [...]} wrapper is accepted too).
 
 Record yourself reading the storyboard's narration lines in order (one take; retakes of a line are
 not detected). The recording is transcribed with faster-whisper (word timestamps, int8, CPU), the
@@ -52,6 +56,39 @@ def transcribe(audio: Path, model: str = "small") -> list[dict]:
             if norm(w.word):
                 words.append({"text": w.word.strip(), "start": float(w.start), "end": float(w.end)})
     return words
+
+
+def load_words(path) -> list[dict]:
+    """Read a transcript made elsewhere. Strict: a wrong shape would silently mis-time every line."""
+    import json
+    f = Path(path)
+    if not f.is_file():
+        raise FishError(f"--words file not found: {f}")
+    try:
+        data = json.loads(f.read_text(encoding="utf-8-sig"))
+    except json.JSONDecodeError as e:
+        raise FishError(f"--words file is not valid JSON: {e}") from None
+    if isinstance(data, dict):
+        data = data.get("words")
+    if not isinstance(data, list) or not data:
+        raise FishError('--words must be a non-empty JSON list of {"text", "start", "end"} (or {"words": [...]})')
+    out = []
+    for i, w in enumerate(data):
+        try:
+            text = str(w.get("text", w.get("word", ""))).strip()
+            a, b = float(w["start"]), float(w["end"])
+        except (AttributeError, KeyError, TypeError, ValueError):
+            raise FishError(f'--words entry {i} needs "text", "start", "end" (seconds): {str(w)[:80]}') from None
+        if not norm(text):
+            continue                                     # punctuation-only tokens carry no timing
+        if not (0 <= a <= b):
+            raise FishError(f"--words entry {i} ({text!r}): need 0 <= start <= end, got {a}..{b}")
+        if out and a < out[-1]["start"] - 0.5:
+            raise FishError(f"--words entry {i} ({text!r}) starts at {a}s, before the previous word: words must be in spoken order")
+        out.append({"text": text, "start": a, "end": b})
+    if not out:
+        raise FishError("--words has no usable words")
+    return out
 
 
 def align(lines: list[dict], words: list[dict]) -> list[dict]:
@@ -189,8 +226,9 @@ def cli(argv=None) -> int:
     ap.add_argument("project")
     ap.add_argument("recording")
     ap.add_argument("--model", default="small")
+    ap.add_argument("--words", default=None, help="JSON transcript made elsewhere; skips transcription")
     ns = ap.parse_args(argv)
-    import_recording(Path(ns.project), ns.recording, ns.model)
+    import_recording(Path(ns.project), ns.recording, ns.model, words=load_words(ns.words) if ns.words else None)
     return 0
 
 
