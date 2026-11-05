@@ -49,6 +49,10 @@ If the music still vanishes: raise `mix.translate.music_harmonics_db` (−4 → 
 | `scribble` (`len`) | marker | len | −24 | whiteboard strokes |
 | `chime`, `swell`, `blips`, `sweep`, `key`, `keycombo`, `enter`, `tok`, `alert` | v1 synth cues, kept | | | |
 
+### Your own cue types
+
+Add a folder `assets/sfx/<type>/` and use `<type>` as a cue. Its level comes from `brief.mix.sfx_levels: {<type>: -14}`, or -22 dBFS by default.
+
 ### Density (`sfx.density` from the interview)
 
 - **rich**: every cue is placed. Use it for Shorts and motivational or explainer pieces.

@@ -31,7 +31,9 @@ SCENE_TYPES = {"title", "kinetic", "bullets", "stat", "chart", "diagram", "white
                "compare", "terminal", "tour", "image", "end", "thumbnail",
                # looks: paper collage, kinetic studio, neon / geometric, footage, screen-explainer steps
                "collage", "split", "cone", "coinflip", "orbit", "neonline", "glowshape", "tunnel", "ringbloom",
-               "footage", "stepcard"}
+               "footage", "stepcard",
+               # long-format roadmap explainers
+               "roadmap", "pile"}
 TRANSITIONS = {"fade", "cut", "wipe", "zoom", "flash", "defocus", "flip", "flood", "dip", "iris", "through", "world", "match"}
 CAPTION_STYLES = {"pop", "karaoke", "minimal", "none"}
 TEXTURES = {"paper", "grain", "clean", "grid", "blueprint"}
@@ -213,7 +215,7 @@ def validate(sb: dict, cfg: dict | None = None) -> tuple[list[str], list[str]]:
         elif s["id"] in ids:
             errors.append(f"{where}: duplicate id")
         ids.add(s.get("id"))
-        if s.get("type") not in SCENE_TYPES:
+        if s.get("type") not in SCENE_TYPES and not sb.get("custom_scenes"):
             errors.append(f"{where}: unknown type {s.get('type')!r} (one of {', '.join(sorted(SCENE_TYPES))})")
         if s.get("transition") and s["transition"] not in TRANSITIONS:
             errors.append(f"{where}: transition must be one of {sorted(TRANSITIONS)}")
@@ -305,7 +307,7 @@ def resolve(project: Path, platform: str, cfg: dict, sb: dict, clips: dict | Non
             energy = 1
         music.append([t_bar, energy])
         out_scenes.append({"id": s["id"], "type": s["type"], "t0": round(t0, 4), "t1": round(t1, 4), "bars": bars, "ts": ts,
-                           "params": s.get("params") or {}, "chapter": s.get("chapter"), "transition": s.get("transition", "fade" if i else "cut"),
+                           "params": {**(s.get("params") or {}), **({"cues": s["cues"]} if s.get("cues") else {})}, "chapter": s.get("chapter"), "transition": s.get("transition", "fade" if i else "cut"),
                            "hud": s.get("hud"), "energy": energy,
                            **{k: s[k] for k in CAMERA_KEYS if s.get(k) is not None}})
         for pl in placed:

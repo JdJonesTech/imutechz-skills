@@ -6,6 +6,15 @@ It is an agent skill: `SKILL.md` is what an AI agent reads. It also works as a p
 
 Videos are rendered from code. Every frame is a pure function of time, drawn in headless Chromium and encoded with ffmpeg, so renders are deterministic and parallel. Real assets can be mixed in: licensed photos, b-roll, music and SFX, plus your own screen recordings, each one logged with its licence. No number appears on screen without a source.
 
+## What's new in 2.2
+
+- Fixed: `custom_scenes` were rejected by the validator, and explicit scene `cues:` never reached the render.
+- New scenes `roadmap` and `pile` for long-format explainers.
+- Custom SFX cue types with their own level (`brief.mix.sfx_levels`).
+- New QA checks: `explicit cues` and `bare frame`.
+- Chatterbox documented as a free local voice route, with a pacing recipe (`references/voice-direction.md`).
+- `references/long-roadmap-videos.md`: what popular roadmap videos do, and memes without copyright claims.
+
 ## What's new in 2.0
 
 - **One strict interview first.** There are 8 rounds and about 30 questions (`config/interview.yaml`) covering topic, platforms, style, colours, type, texture, voice and delivery (with audio auditions), music, SFX density, real assets, screen recording, facts, CTA, captions, thumbnail, approvals and API keys. Each key comes with how to get it and a free fallback. Nothing is asked after creation starts, except the final review and permission to clean up.

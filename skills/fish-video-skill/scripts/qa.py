@@ -19,9 +19,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 from pathlib import Path
 
-from fvcore import (FishError, ensure_project, ffmpeg_bin, ffprobe_bin, last_json_line, load_json, log, main_guard, node,
+from fvcore import (FishError, load_yaml, ensure_project, ffmpeg_bin, ffprobe_bin, last_json_line, load_json, log, main_guard, node,
                     project_config, run)
 import captions as capmod
 
@@ -84,9 +85,15 @@ def detect(path: Path, kind: str) -> list[tuple[float, float]]:
 def contact_sheet(path: Path, out: Path, duration: float, cols: int = 5, width: int = 384) -> Path:
     every = max(1.0, duration / 20)
     rows = max(1, -(-int(duration / every) // cols))
-    run([ffmpeg_bin(), "-y", "-loglevel", "error", "-i", str(path), "-vf",
-         f"fps=1/{every:.3f},scale={width}:-2,drawtext=text='%{{pts\\:hms}}':x=6:y=6:fontsize=14:fontcolor=white:box=1:boxcolor=black@0.6,tile={cols}x{rows}",
-         "-frames:v", "1", str(out)], capture=True)
+    base = f"fps=1/{every:.3f},scale={width}:-2"
+    stamp = "drawtext=text='%{pts\\:hms}':x=6:y=6:fontsize=14:fontcolor=white:box=1:boxcolor=black@0.6"
+    try:
+        run([ffmpeg_bin(), "-y", "-loglevel", "error", "-i", str(path), "-vf",
+             f"{base},{stamp},tile={cols}x{rows}", "-frames:v", "1", str(out)], capture=True)
+    except Exception:
+        # some static ffmpeg builds have no drawtext (no freetype): same sheet, no timestamp labels
+        run([ffmpeg_bin(), "-y", "-loglevel", "error", "-i", str(path), "-vf",
+             f"{base},tile={cols}x{rows}", "-frames:v", "1", str(out)], capture=True)
     return out
 
 
@@ -219,6 +226,32 @@ def speaker_translation(video: Path, narr: list[tuple[float, float]], out_wav: P
     return {"check": "speaker translation", "status": "PASS" if not probs else "WARN", "detail": detail + (f"; {probs}" if probs else "")}
 
 
+def explicit_cues(storyboard: dict, placed: list[dict], density: str = "rich") -> dict:
+    """Every cue written by hand in the storyboard must reach the render, or a planned sound silently never plays.
+    Cues the chosen SFX density filters out on purpose (their lvl is too low) are not counted."""
+    need = {"rich": 1, "standard": 2, "minimal": 3}.get(density, 1)
+    have = {(q.get("scene"), q.get("type")) for q in placed}
+    missing = [f"{s.get('id')}:{q.get('type')}" for s in storyboard.get("scenes", []) for q in (s.get("cues") or [])
+               if q.get("lvl", 2) >= need and (s.get("id"), q.get("type")) not in have]
+    return {"check": "explicit cues", "status": "PASS" if not missing else "FAIL", "detail": "every hand-placed cue was placed" if not missing else f"not placed: {missing[:8]}"}
+
+
+def bare_regions(video: Path, hold: float = 2.0, flat: float = 3.0) -> dict:
+    """WARN when a quarter of the frame stays flat for `hold` seconds or more: a likely empty part of the frame.
+    Measured on a 32x18 greyscale proxy, sampled once a second, so thin background grid lines do not count as content."""
+    import numpy as np
+    W, H = 32, 18
+    raw = subprocess.run([ffmpeg_bin(), "-v", "error", "-i", str(video), "-vf", f"fps=1,scale={W}:{H},format=gray", "-f", "rawvideo", "-"], capture_output=True, check=True).stdout
+    frames = np.frombuffer(raw, dtype=np.uint8).reshape(-1, H, W).astype(float)
+    runs, found = [0, 0, 0, 0], []
+    for t, f in enumerate(frames):
+        for q, part in enumerate((f[1:H // 2 - 1, 1:W // 2 - 1], f[1:H // 2 - 1, W // 2 + 1:-1], f[H // 2 + 1:-1, 1:W // 2 - 1], f[H // 2 + 1:-1, W // 2 + 1:-1])):  # the seams blend in the proxy
+            runs[q] = runs[q] + 1 if part.std() < flat else 0
+            if runs[q] == int(hold) + 1:
+                found.append(f"{t - int(hold)}s {['top-left', 'top-right', 'bottom-left', 'bottom-right'][q]}")
+    return {"check": "bare frame", "status": "PASS" if not found else "WARN", "detail": "no quarter of the frame stays empty" if not found else f"{len(found)} flat regions, open these frames: {found[:8]}"}
+
+
 def qa_platform(project: Path, platform: str, lint: bool = True, preview: bool = False) -> dict:
     cfg = project_config(project)
     prof = dict(cfg["platforms"][platform])
@@ -245,6 +278,8 @@ def qa_platform(project: Path, platform: str, lint: bool = True, preview: bool =
     res.append(mix_balance(video, narr, b / "mix.json"))
     # phone speakers: also writes build/<platform>/phone-monitor.wav, a file to listen to what a phone plays
     res.append(speaker_translation(video, narr, b / "phone-monitor.wav"))
+    res.append(explicit_cues(load_yaml(project / "storyboard.yaml"), info.get("cues", []), (tl.get("sfx") or {}).get("density") or "rich"))
+    res.append(bare_regions(video))
     # legibility lint
     if lint:
         r = node("stills.mjs", project, "--platform", platform, "--lint", "--scale", 0.5, capture=True, check=False)

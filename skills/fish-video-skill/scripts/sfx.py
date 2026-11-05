@@ -55,6 +55,13 @@ def library(project: Path) -> dict[str, list[Path]]:
     return {k: v for k, v in lib.items() if v}
 
 
+def load_brief_mix(project: Path) -> dict:
+    """brief.yaml -> mix (empty when the project has no brief)."""
+    import yaml
+    f = project / "brief.yaml"
+    return (yaml.safe_load(f.read_text(encoding="utf-8")) or {}).get("mix") or {} if f.exists() else {}
+
+
 def decode(f: Path):
     import numpy as np
     r = subprocess.run([ffmpeg_bin(), "-v", "error", "-i", str(f), "-ac", "2", "-ar", str(SR), "-f", "f32le", "-"], capture_output=True, check=True)
@@ -71,6 +78,8 @@ def build(project: Path, platform: str) -> dict:
     tl = load_json(project / "build" / f"timeline-{platform}.json", default={})
     density = (tl.get("sfx") or {}).get("density") or "rich"
     lib = library(project)
+    # per-project levels for any cue type, including custom ones: brief.mix.sfx_levels: {trombone: -14}
+    levels = {**LEVEL_DB, **((load_brief_mix(project)).get("sfx_levels") or {})}
     covered = sorted(lib)
     save_json(b / "sfx-covered.json", covered)
     if not lib:
@@ -95,7 +104,7 @@ def build(project: Path, platform: str) -> dict:
         a = cache[f]
         if typ == "typing" and q.get("len"):
             a = a[: int(q["len"] * SR)]
-        g = 10 ** (LEVEL_DB.get(typ, -22) / 20)
+        g = 10 ** (float(levels.get(typ, -22)) / 20)
         start = t - len(a) / SR if typ == "riser" else t - PRE.get(typ, 0.0)
         i0 = max(0, int(start * SR))
         seg = a[: max(0, min(len(a), n - i0))]

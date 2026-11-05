@@ -338,3 +338,67 @@ def test_resolve_passes_looks_fields(smoke_project):
 def test_validate_rejects_unknown_transition():
     errs, _ = sb.validate({"scenes": [{"id": "a", "type": "collage", "transition": "spin"}]})
     assert any("transition" in e for e in errs)
+
+
+# ------------------------------------------------------------------ explicit cues, custom scenes, custom sound levels
+def test_validate_allows_custom_scene_types_only_when_declared():
+    scene = {"id": "a", "type": "myscene", "params": {}}
+    assert sb.validate({"scenes": [scene]})[0]
+    assert not sb.validate({"custom_scenes": ["scenes/custom.js"], "scenes": [scene]})[0]
+
+
+def test_roadmap_and_pile_are_known_scene_types():
+    errs, _ = sb.validate({"scenes": [{"id": "a", "type": "pile", "params": {}}, {"id": "b", "type": "roadmap", "params": {}}]})
+    assert not errs
+
+
+def test_resolve_keeps_explicit_cues_for_the_stage(smoke_project):
+    cfg = fvcore.project_config(smoke_project)
+    cfg["brief"]["voice"] = {"provider": "none"}
+    cue = {"lt": 0.5, "type": "impact", "lvl": 3}
+    tl = sb.resolve(smoke_project, "shorts", cfg, {"scenes": [{"id": "a", "type": "kinetic", "bars": 2, "cues": [cue], "params": {"lines": ["x"]}}]})
+    assert tl["scenes"][0]["params"]["cues"] == [cue]
+
+
+def test_stage_reads_explicit_cues():
+    src = (fvcore.SKILL / "scripts" / "stage" / "main.js").read_text(encoding="utf-8")
+    assert "it.c.p.cues" in src
+
+
+def test_qa_flags_explicit_cue_that_never_reached_the_render():
+    import qa
+    story = {"scenes": [{"id": "a", "cues": [{"type": "boom"}, {"type": "pop", "lvl": 1}]}]}
+    assert qa.explicit_cues(story, [{"scene": "a", "type": "boom"}], "standard")["status"] == "PASS"  # pop is filtered by density
+    assert qa.explicit_cues(story, [], "standard")["status"] == "FAIL"
+
+
+def test_qa_bare_regions_finds_an_empty_half(tmp_path):
+    import qa
+    ff = fvcore.ffmpeg_bin()
+    half = tmp_path / "half.mp4"
+    subprocess.run([ff, "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=10:d=5", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=10:d=5",
+                    "-filter_complex", "[1]crop=320:90:0:0[b];[0][b]overlay=0:90", "-pix_fmt", "yuv420p", str(half)], check=True)
+    full = tmp_path / "full.mp4"
+    subprocess.run([ff, "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=10:d=5", "-pix_fmt", "yuv420p", str(full)], check=True)
+    assert qa.bare_regions(half)["status"] == "WARN"
+    assert qa.bare_regions(full)["status"] == "PASS"
+
+
+def test_sfx_levels_from_the_brief_apply_to_custom_cue_types(tmp_path):
+    import wave
+    import numpy as np
+    import sfx
+    (tmp_path / "brief.yaml").write_text("title: t\nmix:\n  sfx_levels:\n    mysound: -6\n", encoding="utf-8")
+    assert sfx.load_brief_mix(tmp_path / "missing") == {}
+    d = tmp_path / "assets" / "sfx" / "mysound"
+    d.mkdir(parents=True)
+    tone = (np.sin(np.arange(4800) * 0.05) * 20000).astype("<i2")
+    with wave.open(str(d / "a.wav"), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(48000); w.writeframes(tone.tobytes())
+    b = tmp_path / "build" / "youtube"
+    b.mkdir(parents=True)
+    fvcore.save_json(b / "info.json", {"duration": 1.0, "cues": [{"t": 0.2, "type": "mysound"}]})
+    assert sfx.build(tmp_path, "youtube")["placed"] == 1
+    data = (b / "sfx-samples.wav").read_bytes()
+    peak = np.abs(np.frombuffer(data[data.find(b"data") + 8:], dtype="<f4")).max()
+    assert abs(20 * np.log10(peak) - (-6)) < 0.2

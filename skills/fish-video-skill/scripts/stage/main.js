@@ -587,7 +587,7 @@
     for (const it of items) {
       const def = window.SCENES[it.type];
       const lvl = L.sfxLevel(it.c);
-      const cs = def.cues ? def.cues(it.c) : [];
+      const cs = (def.cues ? def.cues(it.c) : []).concat(it.c.p.cues || []);
       for (const q of cs) {
         if ((q.lvl != null ? q.lvl : 2) < lvl) continue;
         const tt = it.t0 + q.lt / it.c.ts;
