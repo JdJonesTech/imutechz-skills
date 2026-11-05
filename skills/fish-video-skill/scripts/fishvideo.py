@@ -25,7 +25,9 @@
   Research, YouTube, trends, assets, screen recording, analysis:
     fishvideo yt <search|info|subs|download|clip|suggest> ...
     fishvideo trends <dir> --topic "..." [--region IN] [--days 30]
-    fishvideo assets <search|get|cutout|clip|sfx-pack|credits> ...
+    fishvideo assets <search|get|cutout|clip|shot|logo|icon|emoji|sfx-pack|credits> ...
+    fishvideo memes <templates|trending|films|add|sheet|cut|caption|lint|sources> ...   memes, reaction clips, captions (see references/memes-and-real-assets.md)
+    fishvideo sounds <synth|add|audition|search|list> ...   cue sounds: synthesise, import, audition
     fishvideo screenrec <record|import> <dir> <shot> ...
     fishvideo dissect <video> --out <dir> [--fps 4] [--vtt subs.vtt]
     fishvideo sfx <dir> --platform shorts      place sample SFX (normally inside render)
@@ -62,7 +64,8 @@ import voice as voicemod
 import interview as ivmod
 
 PASSTHRU = {"yt": "youtube", "trends": "trends", "assets": "assets", "screenrec": "screenrec", "dissect": "dissect", "sfx": "sfx", "clean": "clean",
-            "review": "review", "voiceover": "voiceover", "beats": "beats", "frame": "design", "thumb": "thumbs"}
+            "review": "review", "voiceover": "voiceover", "beats": "beats", "memes": "memes", "sounds": "sounds",
+            "frame": "design", "thumb": "thumbs"}
 
 
 def passthru(cmd: str, argv: list[str]) -> int:
@@ -228,7 +231,8 @@ def cmd_doctor(keys: bool = False) -> int:
             ("PEXELS_API_KEY", "stock photos + video", "pexels.com/api (free, instant)", "Openverse / Wikimedia / NASA (key-less)"),
             ("PIXABAY_API_KEY", "stock photos + video", "pixabay.com/api/docs (free, log in to see the key)", "Pexels or key-less sources"),
             ("FREESOUND_API_KEY", "CC0 sound effects", "freesound.org/apiv2/apply (free)", "Kenney CC0 packs + synth SFX"),
-            ("YOUTUBE_API_KEY", "trending charts, fast search", "console.cloud.google.com > YouTube Data API v3 > Credentials (free quota)", "yt-dlp search (key-less)")]
+            ("YOUTUBE_API_KEY", "trending charts, fast search", "console.cloud.google.com > YouTube Data API v3 > Credentials (free quota)", "yt-dlp search (key-less)"),
+            ("IMGFLIP_API_KEY", "full meme-template search (paid plan)", "imgflip.com/api", "the free top-templates list")]
     for k, what, how, fb in KEYS:
         have = bool(secret(k))
         log(f"  {'ok  ' if have else 'info'}  {k:<20} {'present' if have else 'missing'}" + ("" if have or not keys else f": {what}. Get it: {how}. Without it: {fb}"))

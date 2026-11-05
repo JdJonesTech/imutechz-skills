@@ -31,6 +31,7 @@ pacing:
     compare: 5.0
     terminal: 5.0
     tour: 4.0
+    meme: 5.0
     image: 4.0
     end: 4.0
     thumbnail: 1.0

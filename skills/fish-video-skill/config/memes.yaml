@@ -1,0 +1,94 @@
+# Meme and comedy-sound sources, by region.
+#
+# `access` says how the skill may use a source:
+#   api     an official API that a command calls
+#   mcp     the source's own MCP server: the agent connects to it and the user signs in once
+#   manual  no automated access. The user opens the page and downloads; then `memes add` or `sounds add`
+# `evidence` records why, and `checked` is the date it was read. Sites change their terms: read them
+# again before raising an access level, and never automate a source marked manual.
+checked: "2026-11-05"
+
+regions:
+  world:
+    label: Worldwide
+    yt_queries: ["memes of the week", "meme compilation this week"]
+  us:
+    label: United States
+    yt_queries: ["memes of the week usa", "viral memes this week"]
+  in:
+    label: India
+    yt_queries: ["indian memes this week", "desi meme compilation", "trending indian meme template"]
+    archive_lang: "hin OR Hindi OR tam OR Tamil OR tel OR Telugu OR ben OR Bengali"
+
+sources:
+  - id: imgflip
+    name: Imgflip meme templates
+    what: image and GIF templates
+    access: api
+    tool: "fishvideo memes templates <dir> [query]"
+    risk: unverified
+    urls:
+      world: "https://imgflip.com/memetemplates"
+    evidence: >-
+      Official API at imgflip.com/api. get_memes (the top templates) is free and needs no key;
+      search_memes (the full database, where regional templates are) needs a paid key. Templates are
+      user uploads, mostly of copyrighted images.
+
+  - id: vlipsy
+    name: Vlipsy
+    what: video memes and reaction clips with sound
+    access: mcp
+    mcp: "https://mcp.vlipsy.com/mcp"
+    tool: "connect the MCP server, download the clip it returns, then: fishvideo memes add <dir> <file-or-url> --source vlipsy"
+    risk: unverified
+    urls:
+      world: "https://vlipsy.com/"
+    evidence: >-
+      Terms of Service (last updated 2025-05-08) forbid using the API or scraping without explicit
+      permission, and say API access is halted. The route Vlipsy offers to AI tools is its hosted MCP
+      server (vlipsy.com/mcp): five read-only tools, Google sign-in for every tier, watermarked 480p on
+      the free tier. Clips are third-party footage offered under fair use.
+
+  - id: myinstants
+    name: Myinstants
+    what: viral sound buttons
+    access: manual
+    tool: "download in the browser, then: fishvideo sounds add <dir> <file> <cue> --source myinstants --source-url <page>"
+    risk: unverified
+    urls:
+      world: "https://www.myinstants.com/en/categories/viral/"
+      us: "https://www.myinstants.com/en/categories/viral/us/"
+      in: "https://www.myinstants.com/en/categories/viral/in/"
+    evidence: >-
+      Terms of Use v1.0 grant access for personal, noncommercial use only, say no part of the site may
+      be downloaded or reproduced unless indicated, and forbid software or scripts that generate
+      automated searches, requests or queries. The site does offer a developer API (the footer link
+      "Myinstants API", /api/v1/, read on 2026-11-05): a list and a detail endpoint, 10 requests a minute
+      anonymous, a token on request by e-mail with your use case. The page does not say the terms above are
+      lifted for it, and the grant stays personal and noncommercial, so this tool does not call it. If you
+      want an automated search, e-mail the address on that page for a token and permission first.
+
+  - id: memeinstants
+    name: Memeinstants
+    what: viral sound buttons
+    access: manual
+    tool: "download in the browser, then: fishvideo sounds add <dir> <file> <cue> --source memeinstants --source-url <page>"
+    risk: unverified
+    urls:
+      in: "https://memeinstants.com/en-IN/sounds/in"
+      world: "https://memeinstants.com/"
+    evidence: >-
+      robots.txt and the listing page both answered HTTP 429 "Vercel Security Checkpoint" (a bot
+      challenge), so the site refuses automated requests and its terms could not be read.
+
+  - id: commons
+    name: Wikimedia Commons and Internet Archive
+    what: public-domain and Creative Commons film, sound and images
+    access: api
+    tool: "fishvideo memes films <dir> <query> [--region in] [--before 1931]; fishvideo sounds search <dir> <query>"
+    risk: safe
+    urls:
+      world: "https://commons.wikimedia.org/"
+    evidence: >-
+      Public APIs with a licence field on every file. Internet Archive items that state no licence
+      are listed as unverified and stay behind the gate.

@@ -1,7 +1,7 @@
 ---
 name: fish-video-skill
-description: Make a premium, upload-ready Short, Reel, TikTok, YouTube or LinkedIn video on any topic. Use it when someone asks for a video, explainer, promo, product or app tour, screen-recorded tutorial, motivational Short, or "a video like this one" (a reference link). It starts with one strict interview (topic, platforms, style, colours, voice, music, SFX, assets, screen recording, API keys), then never asks again until the final review. It researches trends and facts, dissects reference videos, collects licensed real assets, records the screen with focus zooms and click sounds, and renders deterministic motion graphics with a 3D camera: paper collage, kinetic type, neon diagrams, glow metaphors, whiteboards. It adds a natural voice, a mix balanced for phone speakers and word-pop captions, runs QA and a self-review, packages videos, thumbnails, titles, descriptions, tags and credits, and cleans up only with permission.
-version: 2.2.0
+description: Make a premium, upload-ready Short, Reel, TikTok, YouTube or LinkedIn video on any topic. Use it when someone asks for a video, explainer, promo, product or app tour, screen-recorded tutorial, motivational Short, or "a video like this one" (a reference link). It starts with one strict interview (topic, platforms, style, colours, voice, music, SFX, assets, screen recording, API keys), then never asks again until the final review. It researches trends and facts, dissects reference videos, collects licensed real assets and memes, records the screen with focus zooms and click sounds, and renders deterministic motion graphics with a 3D camera: paper collage, kinetic type, neon diagrams, glow metaphors, whiteboards. It adds a natural voice, a mix balanced for phone speakers and word-pop captions, runs QA and a self-review, packages videos, thumbnails, titles, descriptions, tags and credits, and cleans up only with permission.
+version: 2.3.0
 license: MIT
 author: ImuTechz
 compatibility: Python 3.10+ (3.12 recommended), Node 18+, a Chromium browser (Brave/Chrome/Edge/Chromium), ffmpeg (bundled via npm). Windows, macOS, Linux. Optional keys ELEVENLABS_API_KEY, PEXELS_API_KEY, PIXABAY_API_KEY, FREESOUND_API_KEY, YOUTUBE_API_KEY; every one has a key-less fallback.
@@ -35,6 +35,7 @@ Read only what the current step needs:
 - Reviewing frames (sheet, lint, guides, variants, palette, compare) or designing, checking and picking thumbnails → [frame design](references/frame-design.md)
 - Platform sizes and limits → [platform specs](references/platform-specs.md)
 - A long video that walks through stages (a roadmap, a learning path), or memes without copyright claims → [long roadmap videos](references/long-roadmap-videos.md)
+- Memes (Indian and world), reaction clips, cue sounds, website screenshots, logos, icons, emoji, or the `meme` scene → [memes and real assets](references/memes-and-real-assets.md)
 - Which open-source tool to reach for → [field guide](references/open-source-field-guide.md)
 
 ## Non-negotiable workflow
@@ -124,6 +125,7 @@ From the dissections, take numbers: change rate, swish timing and level, voice-o
 - Prepare b-roll: `fishvideo assets clip <dir> <file> <clip_id> --start S --dur S` gives frames for the `footage` scene.
 - Get a CC-BY YouTube section: `fishvideo yt clip <url> <start> <end> <dest> --project <dir>`. It refuses non-CC videos.
 - Licences allowed: CC0, PD, Pexels/Pixabay licences, CC-BY and CC-BY-SA (credited). Never NC or ND. Never a non-CC YouTube video, a reference video's footage, a logo you redraw, or a real person's likeness in a misleading way.
+- One opt-in exception (2.3): memes and viral sounds have no verifiable licence. They are tier `unverified` and refused unless the user chose `viral` in the `memes` interview question (`memes.policy` in the brief) or you pass `--accept-risk` for that one file. Tell the user the risk (claim, mute, takedown). QA warns and the credits list each one as not verified. Details: [memes and real assets](references/memes-and-real-assets.md).
 
 **Screen:**
 - `website`: list the shots under `captures:` and run `fishvideo capture <dir>`. It films read-only in virtual time.
@@ -282,7 +284,7 @@ Never delete without that yes.
 
 - Never invent facts, numbers, quotes, customers or logos. Unsourced numbers fail the build.
 - References are for analysis only. Never cut a reference's footage, music or voice into the video. Downloads stay in `reference/` and are cleaned afterwards.
-- Every third-party asset is in `assets/credits.json` with a licence that allows commercial reuse. The package credits it.
+- Every third-party asset is in `assets/credits.json` with its licence and risk tier. Licence-safe projects hold only licences that allow commercial reuse; opted-in non-safe assets are listed apart. The package credits all of it.
 - Film websites read-only: no logins, no form submits, no purchases, no private data. Desktop recordings never log typed text, only modifier combos.
 - Keys live in `.env` and environment variables only. Never print or commit them.
 - Never max out the user's machine. Renders run below normal priority under a CPU cap (`FISH_CPU_LIMIT`, default 60%), so they take longer but the PC stays usable. Don't raise it unless the user asks. Run heavy jobs one at a time, as tracked background tasks, so nothing is left running.
@@ -328,6 +330,7 @@ Never delete without that yes.
   - [sound design](references/sound-design.md)
   - [style recipes](references/style-recipes.md)
   - [scene catalogue](references/scene-catalogue.md)
+  - [memes and real assets](references/memes-and-real-assets.md)
   - [pacing & music](references/pacing-and-music.md)
   - [captions & typography](references/captions-and-typography.md)
   - [voice direction](references/voice-direction.md)

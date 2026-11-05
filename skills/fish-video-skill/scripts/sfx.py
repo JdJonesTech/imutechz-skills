@@ -45,6 +45,11 @@ def library(project: Path) -> dict[str, list[Path]]:
             files = [x.get("file") or x.get("path") if isinstance(x, dict) else x for x in files]
             fs = [Path(f) if Path(f).is_absolute() else idx.parent / f for f in files]
             lib[t] = [f for f in fs if f.exists()]
+    for pj in sorted((SKILL / "sfx" / "library").glob("*/pack.json")):  # committed packs (cue type -> files)
+        for t, files in ((load_json(pj) or {}).get("cues") or {}).items():
+            fs = [pj.parent / f for f in files if (pj.parent / f).is_file()]
+            if fs:
+                lib[t] = fs
     own = project / "assets" / "sfx"
     if own.exists():
         for d in own.iterdir():
@@ -53,6 +58,38 @@ def library(project: Path) -> dict[str, list[Path]]:
                 if fs:
                     lib[d.name] = fs  # the project's own files override the library
     return {k: v for k, v in lib.items() if v}
+
+
+def levels(project: Path) -> dict[str, float]:
+    """Cue levels in dBFS. Lowest to highest precedence: built-in table, sfx/library/*/pack.json,
+    <project>/assets/sfx/pack.json (written by `sounds add`), brief.mix.sfx_levels."""
+    lv: dict[str, float] = dict(LEVEL_DB)
+    for pj in sorted((SKILL / "sfx" / "library").glob("*/pack.json")):
+        lv.update({k: float(v) for k, v in ((load_json(pj) or {}).get("levels") or {}).items()})
+    pj = Path(project) / "assets" / "sfx" / "pack.json"
+    if pj.exists():
+        lv.update({k: float(v) for k, v in ((load_json(pj) or {}).get("levels") or {}).items()})
+    if (Path(project) / "brief.yaml").exists():
+        lv.update({k: float(v) for k, v in (load_brief_mix(Path(project)).get("sfx_levels") or {}).items()})
+    return lv
+
+
+def credit_pack_files(project: Path, used) -> int:
+    """A recording from a committed pack (sfx/library/<pack>/pack.json) that the video really plays goes into the
+    project's credits with its author and licence, so a CC BY sound is credited in the description."""
+    import fvnet
+    n = 0
+    for f in sorted(used):
+        pj = f.parent / "pack.json"
+        info = ((load_json(pj) or {}).get("files") or {}).get(f.name) if pj.exists() and (SKILL / "sfx" / "library") in f.parents else None
+        if not info:
+            continue
+        lic = fvnet.norm_license(info.get("license"), info.get("license_url"))
+        n += bool(fvnet.add_credit(project, {"id": f"sfxpack-{f.parent.name}-{f.stem}", "provider": "sound pack", "kind": "sfx", "title": info.get("title") or f.stem,
+                                             "author": info.get("author") or "unknown", "url": info.get("source_url") or "", "license": info.get("license"),
+                                             "license_url": info.get("license_url") or "", "attribution_required": bool(lic.get("attribution")), "risk": "safe",
+                                             "file": f"sfx/library/{f.parent.name}/{f.name}"}))
+    return n
 
 
 def load_brief_mix(project: Path) -> dict:
@@ -64,7 +101,7 @@ def load_brief_mix(project: Path) -> dict:
 
 def decode(f: Path):
     import numpy as np
-    r = subprocess.run([ffmpeg_bin(), "-v", "error", "-i", str(f), "-ac", "2", "-ar", str(SR), "-f", "f32le", "-"], capture_output=True, check=True)
+    r = subprocess.run([ffmpeg_bin(), "-v", "error", "-protocol_whitelist", "file,pipe", "-i", str(f), "-ac", "2", "-ar", str(SR), "-f", "f32le", "-"], capture_output=True, check=True)
     a = np.frombuffer(r.stdout, dtype=np.float32).reshape(-1, 2).copy()
     pk = float(np.abs(a).max()) or 1.0
     return a / pk
@@ -79,7 +116,7 @@ def build(project: Path, platform: str) -> dict:
     density = (tl.get("sfx") or {}).get("density") or "rich"
     lib = library(project)
     # per-project levels for any cue type, including custom ones: brief.mix.sfx_levels: {trombone: -14}
-    levels = {**LEVEL_DB, **((load_brief_mix(project)).get("sfx_levels") or {})}
+    lv = levels(project)
     covered = sorted(lib)
     save_json(b / "sfx-covered.json", covered)
     if not lib:
@@ -89,6 +126,7 @@ def build(project: Path, platform: str) -> dict:
     out = np.zeros((n, 2), dtype=np.float32)
     cache: dict[Path, object] = {}
     placed, last = 0, -1.0
+    used: set[Path] = set()
     cues = sorted((q for q in info.get("cues", []) if q.get("type") in lib), key=lambda q: q["t"])
     for k, q in enumerate(cues):
         typ, t = q["type"], float(q["t"])
@@ -99,17 +137,19 @@ def build(project: Path, platform: str) -> dict:
         last = t
         files = lib[typ]
         f = files[int(hashlib.md5(f"{typ}{k}".encode()).hexdigest(), 16) % len(files)]
+        used.add(f)
         if f not in cache:
             cache[f] = decode(f)
         a = cache[f]
         if typ == "typing" and q.get("len"):
             a = a[: int(q["len"] * SR)]
-        g = 10 ** (float(levels.get(typ, -22)) / 20)
+        g = 10 ** (float(lv.get(typ, -22)) / 20)
         start = t - len(a) / SR if typ == "riser" else t - PRE.get(typ, 0.0)
         i0 = max(0, int(start * SR))
         seg = a[: max(0, min(len(a), n - i0))]
         out[i0:i0 + len(seg)] += seg * g
         placed += 1
+    credit_pack_files(project, used)
     wav = b / "sfx-samples.wav"
     pcm = np.clip(out, -1, 1).astype("<f4").tobytes()
     import struct

@@ -30,6 +30,7 @@ Pick by what the beat has to do. Everything else on this page is detail. A scene
 | `roadmap` | `nodes: [{tag, label, src\|glyph}]`, `visits: [{i, word\|t}]` | a recurring map in a long explainer; chapter openers | a short video with few stops |
 | `pile` | `cards: [{src, url, x, y, w}]`, `title`, `title_word` | "too many things": real sites burying the viewer | fewer than 3 cards |
 | `footage` | `clip` or `frames` | real moving pictures | stock with nothing happening |
+| `meme` | `src` or `clip`; `top`, `bottom`, `inset`, `punch`, `sound`, `credit` | a joke beat with a picture or clip and captions: see [memes and real assets](memes-and-real-assets.md) | the gag needs explaining; a picture with no credit |
 | `tour` | `shot` (a capture) | software and websites | no clicks to follow |
 | `stepcard` | `n`, `title` | a step label inside a tour | outside a tour |
 | `end` | `cta`, and `name` or `tagline` | the close; loops back to the hook's hero | long taglines |

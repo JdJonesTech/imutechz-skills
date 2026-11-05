@@ -212,6 +212,15 @@ rounds:
         question: "Logo, fonts or product images to use? Give paths, or say none (I never redraw a logo)."
         free_text: true
         maps_to: brand.files
+      - id: memes
+        required: false
+        header: Memes
+        question: "Memes and viral clips or sounds: licence-safe only, none, or may I also use viral ones whose licence nobody can verify (they can be claimed, muted or taken down)? Not asking is the same as safe."
+        maps_to: memes.policy
+        options:
+          - {label: "Licence-safe only (Recommended)", value: safe, description: "Public-domain and Creative Commons film, our own synthesised sounds, and files you own"}
+          - {label: "No memes", value: none, description: "No meme scenes; QA warns if one appears"}
+          - {label: "Viral ones too", value: viral, description: "Unlicensed templates and clips are allowed; QA and the credits list each one as not verified"}
 
   - id: content
     title: "Round 6 - What it says"
