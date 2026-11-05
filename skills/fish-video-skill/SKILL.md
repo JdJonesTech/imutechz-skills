@@ -1,7 +1,7 @@
 ---
 name: fish-video-skill
 description: Make a premium, upload-ready Short, Reel, TikTok, YouTube or LinkedIn video on any topic. Use it when someone asks for a video, explainer, promo, product or app tour, screen-recorded tutorial, motivational Short, or "a video like this one" (a reference link). It starts with one strict interview (topic, platforms, style, colours, voice, music, SFX, assets, screen recording, API keys), then never asks again until the final review. It researches trends and facts, dissects reference videos, collects licensed real assets, records the screen with focus zooms and click sounds, and renders deterministic motion graphics with a 3D camera: paper collage, kinetic type, neon diagrams, glow metaphors, whiteboards. It adds a natural voice, a mix balanced for phone speakers and word-pop captions, runs QA and a self-review, packages videos, thumbnails, titles, descriptions, tags and credits, and cleans up only with permission.
-version: 2.1.0
+version: 2.2.0
 license: MIT
 author: ImuTechz
 compatibility: Python 3.10+ (3.12 recommended), Node 18+, a Chromium browser (Brave/Chrome/Edge/Chromium), ffmpeg (bundled via npm). Windows, macOS, Linux. Optional keys ELEVENLABS_API_KEY, PEXELS_API_KEY, PIXABAY_API_KEY, FREESOUND_API_KEY, YOUTUBE_API_KEY; every one has a key-less fallback.
@@ -33,6 +33,7 @@ Read only what the current step needs:
 - A website or app on screen → [website-tour capture](references/website-tour-capture.md)
 - A reference video to match → [reference breakdowns](references/reference-breakdowns.md), [reference-video analysis](references/reference-video-analysis.md), [trending analysis](references/trending-analysis.md)
 - Platform sizes and limits → [platform specs](references/platform-specs.md)
+- A long video that walks through stages (a roadmap, a learning path), or memes without copyright claims → [long roadmap videos](references/long-roadmap-videos.md)
 - Which open-source tool to reach for → [field guide](references/open-source-field-guide.md)
 
 ## Non-negotiable workflow
@@ -298,6 +299,9 @@ Never delete without that yes.
 | Swishes feel late and mushy | 0.55 s whooshes placed on the cut | 150 ms swish, starting 0.1 s before the move |
 | Looks flat, like a template | Vector boxes only, no assets, no texture | Real cut-outs (`assets cutout`), `texture: paper/grain`, contact shadows, glow; collage/split/neon scenes |
 | A generic narrator | Fixed default voice | A delivery preset plus auditions in the interview, with ElevenLabs, Kokoro and edge Multilingual voices |
+| A planned sound never plays | Explicit `cues:` were dropped before the stage | Fixed; QA now fails if a hand-placed cue is missing. Measure the SFX stem to confirm |
+| Half the frame sits empty, QA still passes | Technical checks cannot see it | Tile the video and open the sheet; `qa` warns on flat regions |
+| Imported voiceover lost its pauses | `pacing.max_word_gap` trims them | Raise it for a performance you approved |
 | Soft zooms in screen tutorials | Recorded at 1× | `screenrec --scale 2`, `capture` at DPR 2 |
 | Captions unreadable over busy frames | No plate | `captions.style: pop` adds an automatic 40% plate |
 | Plus every v1 renderer issue | | See [website-tour capture](references/website-tour-capture.md) (virtual time, fonts, decode, faststart, loudnorm) |

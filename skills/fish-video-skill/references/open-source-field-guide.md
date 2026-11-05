@@ -28,8 +28,10 @@ Tags: **[read]** = verified in the project's files or GitHub metadata on 2026-11
 | MusicGen | Weights are CC-BY-NC [memory]: not usable commercially. |
 | ACE-Step (Apache-2.0 [read]), YuE, DiffRhythm | Need a GPU; impractical on a CPU-only PC. Library tracks and the synth score are better. Reconsider on a GPU. |
 | F5-TTS | Code is MIT [read], but the weights are CC-BY-NC [memory]. Skip for commercial use. |
-| Chatterbox | `exaggeration` / `cfg_weight` look like the best emotion control [read]. Its licence was not confirmed, and it watermarks output. Evaluate next. |
+| Chatterbox | Now adopted as a local route; see [voice direction](voice-direction.md). MIT per its maker [read]; output carries a watermark. |
 | Dia, Orpheus | GPU-bound [memory]. |
+| Fish Audio Drama 3 | Top open-weight model in blind tests (November 2026 snapshot), but reported to need about 32-48 GB of NVIDIA memory, and its licence has a revenue cap [read]. |
+| VibeVoice | Weights reported as research use only [read]. Not for commercial use. |
 | OpenVoice v2 | Tone-colour conversion only; P3. |
 | madmom, essentia | Non-commercial model files / AGPL [memory]. Ideas only; librosa is used instead. |
 | openSMILE | Research licence [memory]. |

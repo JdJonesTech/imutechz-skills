@@ -27,6 +27,8 @@ Pick by what the beat has to do. Everything else on this page is detail. A scene
 | `quote` | `text`, `by` | a real quotation | over 25 words; unattributed |
 | `terminal` | `lines: [{cmd} \| {out}]` | developer content | non-developer audience |
 | `image` | `src`; `title`, `caption`, `credit`; `treat: none`, `frame: cover\|card` | a real photo that proves the point | a dull photo; no title |
+| `roadmap` | `nodes: [{tag, label, src\|glyph}]`, `visits: [{i, word\|t}]` | a recurring map in a long explainer; chapter openers | a short video with few stops |
+| `pile` | `cards: [{src, url, x, y, w}]`, `title`, `title_word` | "too many things": real sites burying the viewer | fewer than 3 cards |
 | `footage` | `clip` or `frames` | real moving pictures | stock with nothing happening |
 | `tour` | `shot` (a capture) | software and websites | no clicks to follow |
 | `stepcard` | `n`, `title` | a step label inside a tour | outside a tour |
@@ -251,7 +253,7 @@ A static 1280×720 composition (the `thumbnail:` block in the storyboard).
 
 ## Writing a custom scene (checklist)
 
-- [ ] Put it in `<project>/scenes/custom.js` and list it in `custom_scenes`.
+- [ ] Put it in `<project>/scenes/custom.js` and list it in `custom_scenes`. Listing any custom scene lets the validator accept types it does not know, so check the spelling of your scene types.
 - [ ] Lay out inside `c.safe`. Size type as `N * c.u`. Fit headlines.
 - [ ] Make `update` a pure function of `t`. Use no timers, no `Math.random`, no CSS transitions.
 - [ ] Load images through `L.setImg`, which waits for the decode.
@@ -265,6 +267,8 @@ The scenes below come from `scenes/collage.js`, `scenes/fx.js`, `scenes/footage.
 ### Cues and density
 
 Every scene emits cues from this vocabulary: `pop`, `tick`, `click`, `swish` (a 150 ms move), `whoosh` (a longer move), `wipe`, `riser {len}` (it ends at `lt`, so `lt` sits on the reveal), `impact`, `boom`, `thump`, `zap`, `flash`, `coin`, `paper`, `ripple`, `typing {len}`, `scribble {len}`, `chime`, `hit`, `swell`. Swishes and whooshes are placed 0.1 s before the motion they belong to.
+
+A scene's explicit `cues: [{lt, type, lvl}]` are added to the ones the scene emits, and QA fails if a cue the density keeps never reaches the render. A `type` can be your own: put samples in `assets/sfx/<type>/` and set its level in `brief.mix.sfx_levels: {<type>: -14}` (default -22 dBFS).
 
 Each cue carries `lvl`: 1 = an entrance (kept by `rich`), 2 = a transition or reveal (kept by `standard`), 3 = a big moment (kept by `minimal`). The density comes from `sfx: {density: rich | standard | minimal}` in the brief or storyboard (a bare string also works), and a scene can override it with `params.sfx`.
 
@@ -372,6 +376,19 @@ N circles bloom around a ring, each 30 ms after the last, around a centre value.
 ```yaml
 - {id: ring, type: ringbloom, bars: 2, params: {title: "IN 30 DAYS", value: "30", label: "days of reps", n: 15}}
 ```
+
+### `roadmap`
+A serpentine map of stops joined by a glowing line. The camera lands on a stop when its word is spoken, and is clamped so it never looks past the map and shows bare background.
+- Params: `nodes`, `visits`, `open_wide` (seconds: open on the whole map, then push in), `pull_word` or `pull_at`, `pull_dur`, `reveal_all`, `kicker`, `cta`, `cta_word`, `cols` (4), `zoom` (1.42), `wide_zoom` (.68), `move` (.8).
+- Use it at every chapter of a long video, so the viewer always knows where they are. `visits[].word` is a word in the scene's narration.
+
+```yaml
+- {id: step2, type: roadmap, say: "Step two is where you start building.", params: {open_wide: 1.1, nodes: [{tag: STEP 1, label: Basics, glyph: "f(x)"}, {tag: STEP 2, label: Building, src: assets/site.jpg}], visits: [{i: 0, t: 0}, {i: 1, word: building}]}}
+```
+
+### `pile`
+Real websites land big in the centre one by one, then settle into a pile, and a line lands over them. Each card is full size when it arrives, so no part of the frame waits empty.
+- Params: `cards: [{src, url, x, y, w, rot, word|at}]`, `chips`, `chip_every`, `title`, `title_word`, `title_cue` (swell), `title_size`, `hold_last`.
 
 ### `footage`
 A stock clip played from pre-extracted frames: `build/clips/<clip>/f_00001.jpg`, and so on, at the project fps. Every frame goes through `L.setImg`.
