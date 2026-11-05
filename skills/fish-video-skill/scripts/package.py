@@ -6,7 +6,8 @@
     README.md                     index: what each file is, durations, QA status, what to upload where
     video/<slug>-<platform>.mp4   one encoded cut per platform
     captions/<slug>-<platform>.srt|.vtt
-    thumbnails/thumbnail-1280x720.png      YouTube thumbnail (the storyboard's thumbnail scene)
+    thumbnails/thumbnail-1280x720.png      YouTube thumbnail (the one `fishvideo thumb pick` chose, else the storyboard's thumbnail scene),
+                                           with thumbnail-variants.png, thumbnail-feed-*.png and thumbnail-check.md when `thumb make` was run
     thumbnails/cover-<platform>.png        a vertical cover frame per 9:16 / 4:5 cut
     metadata/titles.txt           title options (brief.publish.titles, informed by research/trends.md)
     metadata/<platform>-post.txt  title, description with chapters, sources, hashtags, credits
@@ -27,6 +28,7 @@ import time
 from pathlib import Path
 
 from fvcore import SKILL, FishError, ensure_project, load_json, log, main_guard, mmss, node, project_config, slugify
+import fvnet
 import storyboard as sbmod
 
 
@@ -73,11 +75,22 @@ def credits_text(project: Path, voice: dict, music_note: str) -> str:
     items = load_json(cf, default=[]) if cf.exists() else []
     if isinstance(items, dict):
         items = items.get("items") or list(items.values())
+    held: dict[str, list[str]] = {"platform": [], "unverified": []}
     for it in items:
         if not isinstance(it, dict):
             continue
         att = it.get("attribution") or f"\"{it.get('title') or it.get('id')}\" by {it.get('author') or 'unknown'} ({it.get('provider')})"
-        lines.append(f"- {att}, licence: {it.get('license')}" + (f" {it.get('license_url')}" if it.get("license_url") else "") + (f" {it.get('url')}" if it.get("url") else ""))
+        line = f"- {att}, licence: {it.get('license')}" + (f" {it.get('license_url')}" if it.get("license_url") else "") + (f" {it.get('url')}" if it.get("url") else "")
+        tier = fvnet.risk_of(it)
+        if tier == "safe":
+            if line not in lines:
+                lines.append(line)
+        elif line not in held[tier]:
+            held[tier].append(line)
+    for tier, head in (("platform", "Shown under the source's own terms (no open licence):"),
+                       ("unverified", "LICENCE NOT VERIFIED (review before publishing; these can be claimed, muted or taken down):")):
+        if held[tier]:
+            lines += ["", head] + held[tier] + [""]
     lines.append(f"- Music: {music_note}")
     prov = voice.get("provider")
     if prov and prov != "none":
@@ -157,6 +170,9 @@ def package(project: Path, out: Path | None = None, name: str | None = None) -> 
     r = node("stills.mjs", project, "--platform", "thumbnail", "--at", "0.5", "--out", thumb, capture=True, check=False)
     if not thumb.exists():
         log(f"!! thumbnail failed: {(r.stderr or '')[-300:]}")
+    import thumbs
+    for name in thumbs.ship(project, dest):      # the picked thumbnail, the variants and feed sheets, the check results
+        log(f"  thumbnails: {name}")
     tags = tags_for(brief, trends)
     (md / "tags.txt").write_text(", ".join(tags) + "\n", encoding="utf-8")
     (md / "titles.txt").write_text("\n".join(f"{i + 1}. {t}" for i, t in enumerate(titles)) + "\n", encoding="utf-8")

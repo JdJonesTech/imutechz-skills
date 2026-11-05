@@ -6,6 +6,14 @@ It is an agent skill: `SKILL.md` is what an AI agent reads. It also works as a p
 
 Videos are rendered from code. Every frame is a pure function of time, drawn in headless Chromium and encoded with ffmpeg, so renders are deterministic and parallel. Real assets can be mixed in: licensed photos, b-roll, music and SFX, plus your own screen recordings, each one logged with its licence. No number appears on screen without a source.
 
+## What's new in 2.3
+
+- **Memes and real assets** (`references/memes-and-real-assets.md`): `memes` (templates, trending, films, add, sheet, cut, caption, lint), `sounds` (synth, search, add, list, audition) and `assets shot|logo|icon|emoji`.
+- **Risk tiers** on every asset (`safe`, `platform`, `unverified`). Unverified memes and sounds are refused unless the project opts in (new optional interview question `memes`) or you pass `--accept-risk`; QA and the credits list them.
+- A `meme` scene (picture or clip, captions, punch-in, reaction inset, its own sound cue).
+- A licensed meme sound pack (12 recordings) in `sfx/library/meme/`, credited automatically when used.
+- New QA checks: `asset licences`, `meme lint`, `cue sounds`. `IMGFLIP_API_KEY` is optional.
+
 ## What's new in 2.2
 
 - Fixed: `custom_scenes` were rejected by the validator, and explicit scene `cues:` never reached the render.

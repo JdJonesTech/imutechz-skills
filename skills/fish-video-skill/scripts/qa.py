@@ -22,7 +22,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from fvcore import (FishError, load_yaml, ensure_project, ffmpeg_bin, ffprobe_bin, last_json_line, load_json, log, main_guard, node,
+from fvcore import (SKILL, FishError, load_yaml, ensure_project, ffmpeg_bin, ffprobe_bin, last_json_line, load_json, log, main_guard, node,
                     project_config, run)
 import captions as capmod
 
@@ -236,6 +236,42 @@ def explicit_cues(storyboard: dict, placed: list[dict], density: str = "rich") -
     return {"check": "explicit cues", "status": "PASS" if not missing else "FAIL", "detail": "every hand-placed cue was placed" if not missing else f"not placed: {missing[:8]}"}
 
 
+def synth_cue_types() -> set[str]:
+    """Cue types music.mjs can synthesise itself: the `case "<type>"` labels of its cue switch."""
+    import re
+    src = (SKILL / "scripts" / "music.mjs").read_text(encoding="utf-8")
+    body = src[src.index("switch (q.type)"):]
+    return set(re.findall(r'^\s*case "([A-Za-z0-9_-]+)":', body, re.M))
+
+
+def cue_sounds(project: Path, storyboard: dict) -> dict:
+    """A hand-placed cue whose type has neither a sample nor a synthesised sound plays nothing, and nothing else reports it."""
+    import sfx
+    have = set(sfx.library(project)) | synth_cue_types()
+    missing = sorted({q.get("type") for s in storyboard.get("scenes", []) for q in (s.get("cues") or []) if q.get("type") and q.get("type") not in have})
+    return {"check": "cue sounds", "status": "PASS" if not missing else "WARN",
+            "detail": "every hand-placed cue type has a sound" if not missing else f"no sound for cue type(s): {missing[:8]}; add one with `sounds add` or `sounds synth`"}
+
+
+def asset_licences(project: Path) -> dict:
+    """WARN, naming each one, for every asset that is not licence-safe (see references/memes-and-real-assets.md)."""
+    import fvnet
+    rows = fvnet.risky(project)
+    if not rows:
+        return {"check": "asset licences", "status": "PASS", "detail": "every credited asset is public domain, Creative Commons or ours"}
+    names = [f"{r.get('title') or r.get('id')} [{fvnet.risk_of(r)}: {r.get('provider')}]" for r in rows]
+    return {"check": "asset licences", "status": "WARN", "detail": f"{len(rows)} not licence-safe, review before publishing: {'; '.join(names[:6])}" + (" ..." if len(names) > 6 else "")}
+
+
+def meme_checks(project: Path) -> list[dict]:
+    import memes
+    found = memes.lint(project)
+    if not found:
+        return []
+    bad = [f for f in found if f["level"] == "FAIL"]
+    return [{"check": "meme lint", "status": "FAIL" if bad else "WARN", "detail": "; ".join(f"{f['scene']}: {f['msg']}" for f in found[:4])}]
+
+
 def bare_regions(video: Path, hold: float = 2.0, flat: float = 3.0) -> dict:
     """WARN when a quarter of the frame stays flat for `hold` seconds or more: a likely empty part of the frame.
     Measured on a 32x18 greyscale proxy, sampled once a second, so thin background grid lines do not count as content."""
@@ -285,6 +321,9 @@ def qa_platform(project: Path, platform: str, lint: bool = True, preview: bool =
     res.append(speaker_translation(video, narr, b / "phone-monitor.wav"))
     res.append(explicit_cues(load_yaml(project / "storyboard.yaml"), info.get("cues", []), (tl.get("sfx") or {}).get("density") or "rich"))
     res.append(bare_regions(video))
+    res.append(cue_sounds(project, load_yaml(project / "storyboard.yaml")))
+    res.append(asset_licences(project))
+    res += meme_checks(project)
     # legibility lint
     if lint:
         r = node("stills.mjs", project, "--platform", platform, "--lint", "--scale", 0.5, capture=True, check=False)
@@ -299,6 +338,13 @@ def qa_platform(project: Path, platform: str, lint: bool = True, preview: bool =
         res.append({"check": "facts", "status": "PASS" if not fc["unsupported"] else "FAIL", "detail": f"{fc['checked']} numbers checked" + (f"; unsupported: {fc['unsupported'][:5]}" if fc["unsupported"] else "")})
     except FishError as e:
         res.append({"check": "facts", "status": "WARN", "detail": str(e)})
+    # design QA (advice only: WARN) and the thumbnails, once, on the first platform
+    if lint:
+        import design as designmod
+        res.append(designmod.qa_row(project, platform))
+    import storyboard as sbmod, thumbs
+    if platform == sbmod.platforms_of(cfg)[0]:
+        res += thumbs.qa_rows(project)
     sheet = contact_sheet(video, b / "contact.png", tl["duration"] if not preview else float(probe(video)["format"]["duration"]), cols=5 if tl["W"] >= tl["H"] else 6, width=384 if tl["W"] >= tl["H"] else 216)
     status = "FAIL" if any(r["status"] == "FAIL" for r in res) else "WARN" if any(r["status"] == "WARN" for r in res) else "PASS"
     rep = {"platform": platform, "video": str(video), "status": status, "checks": res, "contact_sheet": str(sheet)}

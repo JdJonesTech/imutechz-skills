@@ -31,7 +31,7 @@ SCENE_TYPES = {"title", "kinetic", "bullets", "stat", "chart", "diagram", "white
                "compare", "terminal", "tour", "image", "end", "thumbnail",
                # looks: paper collage, kinetic studio, neon / geometric, footage, screen-explainer steps
                "collage", "split", "cone", "coinflip", "orbit", "neonline", "glowshape", "tunnel", "ringbloom",
-               "footage", "stepcard",
+               "footage", "stepcard", "meme",
                # long-format roadmap explainers
                "roadmap", "pile"}
 TRANSITIONS = {"fade", "cut", "wipe", "zoom", "flash", "defocus", "flip", "flood", "dip", "iris", "through", "world", "match"}
@@ -183,6 +183,8 @@ def min_visual(scene: dict, cfg: dict, beat: float, shots: dict) -> float:
         base = max(base, beat * (3 + nl * 0.5 + nr) + 1.5)
     elif t == "stepcard":
         base = float(cfg["pacing"]["min_scene"].get(t, 1.8))
+    elif t == "meme":
+        base = max(base, beat * (3 + 2 * (1 if p.get("inset") else 0)) + 1.6)
     elif t == "tour":
         meta = shots.get(p.get("shot"))
         if meta:
@@ -196,7 +198,7 @@ def min_visual(scene: dict, cfg: dict, beat: float, shots: dict) -> float:
 DEFAULT_ENERGY = {"title": 2, "kinetic": 1, "end": 0, "tour": 3, "whiteboard": 2, "diagram": 2, "chart": 2, "stat": 3,
                   "bullets": 2, "steps": 2, "terminal": 2, "quote": 1, "compare": 2, "image": 1, "thumbnail": 0,
                   "collage": 2, "split": 3, "cone": 1, "coinflip": 3, "orbit": 2, "neonline": 3, "glowshape": 2,
-                  "tunnel": 3, "ringbloom": 3, "footage": 2, "stepcard": 2}
+                  "tunnel": 3, "ringbloom": 3, "footage": 2, "stepcard": 2, "meme": 3}
 
 
 # ------------------------------------------------------------------ validation
@@ -226,6 +228,15 @@ def validate(sb: dict, cfg: dict | None = None) -> tuple[list[str], list[str]]:
             warns.append(f"{where}: a stat with no source — every number needs one")
         if s.get("type") == "chart" and not p.get("source"):
             warns.append(f"{where}: a chart with no source")
+        if s.get("type") == "meme":
+            if not (p.get("src") or p.get("clip")):
+                errors.append(f"{where}: a meme scene needs `src` (a picture under the project) or `clip` (cut with `memes cut`)")
+            for nm in (p.get("clip"), (p.get("inset") or {}).get("clip")):
+                if nm and (not isinstance(nm, str) or re.sub(r"[^A-Za-z0-9._-]+", "-", nm).strip("-.") != nm or ".." in nm):
+                    errors.append(f"{where}: clip name {nm!r} must be a plain name (letters, digits, . _ -): the id you gave `memes cut`")
+            for ref in (p.get("src"), (p.get("inset") or {}).get("src")):
+                if ref and (str(ref).startswith(("/", "\\")) or ".." in Path(str(ref)).parts or re.match(r"^[a-z]+:", str(ref), re.I)):
+                    errors.append(f"{where}: meme picture {ref!r} must be a path inside the project (for example assets/meme/x.png)")
         blob = repr(p) + repr(s.get("say"))
         if re.search(r"\bTODO\b|\bTBD\b|lorem ipsum", blob, re.I):
             warns.append(f"{where}: contains TODO/placeholder text")
@@ -235,6 +246,20 @@ def validate(sb: dict, cfg: dict | None = None) -> tuple[list[str], list[str]]:
 
 
 # ------------------------------------------------------------------ timeline
+def _meme_params(project: Path, p: dict) -> dict:
+    """A meme scene names its clip; the frame count and rate come from the clip's own meta.json (an explicit value wins)."""
+    def fill(q: dict) -> dict:
+        mj = Path(project) / "build" / "clips" / str(q.get("clip") or "") / "meta.json"
+        if q.get("clip") and mj.is_file():
+            meta = load_json(mj)
+            return {"frames": meta.get("frames"), "fps": meta.get("fps"), **q}
+        return q
+    p = fill(dict(p))
+    if isinstance(p.get("inset"), dict):
+        p["inset"] = fill(dict(p["inset"]))
+    return p
+
+
 def resolve(project: Path, platform: str, cfg: dict, sb: dict, clips: dict | None = None) -> dict:
     """Resolve one platform's timeline: bars, absolute times, voice placement, captions, energy."""
     brief = cfg["brief"]
@@ -306,6 +331,8 @@ def resolve(project: Path, platform: str, cfg: dict, sb: dict, clips: dict | Non
         if i == 0 and "energy" not in s:
             energy = 1
         music.append([t_bar, energy])
+        if s["type"] == "meme":
+            s["params"] = _meme_params(project, s.get("params") or {})
         out_scenes.append({"id": s["id"], "type": s["type"], "t0": round(t0, 4), "t1": round(t1, 4), "bars": bars, "ts": ts,
                            "params": {**(s.get("params") or {}), **({"cues": s["cues"]} if s.get("cues") else {})}, "chapter": s.get("chapter"), "transition": s.get("transition", "fade" if i else "cut"),
                            "hud": s.get("hud"), "energy": energy,

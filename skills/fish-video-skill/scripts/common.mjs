@@ -78,13 +78,13 @@ export async function launch(opts = {}) {
   return b;
 }
 
-async function launchRaw({ headless = true } = {}) {
+async function launchRaw({ headless = true, sandbox = false } = {}) {
   return puppeteer().launch({
     executablePath: browserPath(),
     headless,
     protocolTimeout: 900000,
     args: [
-      "--no-sandbox",
+      ...(sandbox ? [] : ["--no-sandbox"]),
       "--use-angle=swiftshader",
       "--enable-unsafe-swiftshader",
       "--hide-scrollbars",
