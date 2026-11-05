@@ -231,6 +231,9 @@ def validate(sb: dict, cfg: dict | None = None) -> tuple[list[str], list[str]]:
         if s.get("type") == "meme":
             if not (p.get("src") or p.get("clip")):
                 errors.append(f"{where}: a meme scene needs `src` (a picture under the project) or `clip` (cut with `memes cut`)")
+            for nm in (p.get("clip"), (p.get("inset") or {}).get("clip")):
+                if nm and (not isinstance(nm, str) or re.sub(r"[^A-Za-z0-9._-]+", "-", nm).strip("-.") != nm or ".." in nm):
+                    errors.append(f"{where}: clip name {nm!r} must be a plain name (letters, digits, . _ -): the id you gave `memes cut`")
             for ref in (p.get("src"), (p.get("inset") or {}).get("src")):
                 if ref and (str(ref).startswith(("/", "\\")) or ".." in Path(str(ref)).parts or re.match(r"^[a-z]+:", str(ref), re.I)):
                     errors.append(f"{where}: meme picture {ref!r} must be a path inside the project (for example assets/meme/x.png)")

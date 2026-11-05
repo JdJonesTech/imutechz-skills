@@ -101,7 +101,7 @@ def load_brief_mix(project: Path) -> dict:
 
 def decode(f: Path):
     import numpy as np
-    r = subprocess.run([ffmpeg_bin(), "-v", "error", "-i", str(f), "-ac", "2", "-ar", str(SR), "-f", "f32le", "-"], capture_output=True, check=True)
+    r = subprocess.run([ffmpeg_bin(), "-v", "error", "-protocol_whitelist", "file,pipe", "-i", str(f), "-ac", "2", "-ar", str(SR), "-f", "f32le", "-"], capture_output=True, check=True)
     a = np.frombuffer(r.stdout, dtype=np.float32).reshape(-1, 2).copy()
     pk = float(np.abs(a).max()) or 1.0
     return a / pk

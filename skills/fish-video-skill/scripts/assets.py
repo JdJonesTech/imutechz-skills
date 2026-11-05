@@ -211,11 +211,12 @@ def _archive(q, kind, n, **opts):
             continue
         lurl = str(it.get("licenseurl") or "")
         creator = it.get("creator")
+        sl = fvnet.strict_license_url(lurl)    # the link is the uploader's own text: only a real creativecommons.org licence page counts
+        if sl["restricted"]:
+            continue            # states an NC / ND licence
         rec = _rec("archive", ident, kind, it.get("title") or ident, f"https://archive.org/details/{urllib.parse.quote(ident)}", None, None, None, None, None,
-                   ", ".join(creator) if isinstance(creator, list) else creator or "", "", lurl or "no licence stated", lurl,
-                   risk=None if lurl else "unverified", year=_year(str(it.get("year") or "")), identifier=ident)
-        if lurl and not rec["_ok"]:
-            continue            # states a licence, and it is NC / ND / unknown
+                   ", ".join(creator) if isinstance(creator, list) else creator or "", "", sl["label"] if sl["ok"] else "no verifiable licence" + (" (the uploader's link is not a Creative Commons page)" if lurl else ""),
+                   sl["url"] if sl["ok"] else "", risk="safe" if sl["ok"] else "unverified", year=_year(str(it.get("year") or "")), identifier=ident)
         rec["_ok"] = True
         out.append(rec)
         if len(out) >= n:
@@ -509,7 +510,7 @@ def prep_clip(project, src, clip_id: str, start: float = 0, dur: float | None = 
     cmd = [ffmpeg_bin(), "-hide_banner", "-loglevel", "error", "-y", "-ss", str(start)]
     if dur:
         cmd += ["-t", str(dur)]
-    cmd += ["-i", str(src), "-an", "-vf", clip_filters(fps, width, grade, sharpen, lut, aspect, focus), "-q:v", "3", str(out / "f_%05d.jpg")]
+    cmd += ["-protocol_whitelist", "file,pipe", "-i", str(src), "-an", "-vf", clip_filters(fps, width, grade, sharpen, lut, aspect, focus), "-q:v", "3", str(out / "f_%05d.jpg")]
     run(cmd)
     frames = sorted(out.glob("f_*.jpg"))
     if not frames:
@@ -526,15 +527,19 @@ def prep_clip(project, src, clip_id: str, start: float = 0, dur: float | None = 
 
 
 # ------------------------------------------------------------------ website stills
-def shot(project, urls, width: int = 1440, height: int = 900, dpr: float = 2, full: bool = False, wait: float = 2.5, keep_banners: bool = False) -> list[Path]:
+def shot(project, urls, width: int = 1440, height: int = 900, dpr: float = 2, full: bool = False, wait: float = 2.5, keep_banners: bool = False, allow_private: bool = False) -> list[Path]:
     """Read-only stills of web pages into assets/shots/, with cookie banners hidden. Each one is logged as a
     `platform` asset: a screenshot shows someone else's site, under that site's terms."""
     project = ensure_project(project)
-    urls = [fvnet.http_only(u) for u in ([urls] if isinstance(urls, str) else urls)]
+    urls = [fvnet.strip_userinfo(fvnet.http_only(u)) for u in ([urls] if isinstance(urls, str) else urls)]
+    if not allow_private:
+        for u in urls:
+            if fvnet.private_host(urllib.parse.urlsplit(u).hostname):
+                raise FishError(f"refused a local or private address: {u[:80]} (a page on your own machine or network: pass --allow-private if you mean it)")
     from fvcore import browser_bin, last_json_line, node
     if not browser_bin():
         raise FishError("a screenshot needs Chromium/Brave/Chrome: set BROWSER=/path")
-    args = ["--width", width, "--height", height, "--dpr", dpr, "--wait", wait] + (["--full"] if full else []) + (["--keep-banners"] if keep_banners else [])
+    args = ["--width", width, "--height", height, "--dpr", dpr, "--wait", wait] + (["--full"] if full else []) + (["--keep-banners"] if keep_banners else []) + (["--allow-private"] if allow_private else [])
     r = node("shot.mjs", project, *urls, *args, capture=True)
     rep = last_json_line(r.stdout) or {}
     out = []
@@ -543,8 +548,9 @@ def shot(project, urls, width: int = 1440, height: int = 900, dpr: float = 2, fu
             warn(f"{it['url']}: {it['error']}")
             continue
         rel = str(Path(it["file"]).resolve().relative_to(project.resolve())).replace("\\", "/")
-        host = urllib.parse.urlsplit(it["url"]).netloc
-        add_credit(project, {"id": f"screenshot-{Path(it['file']).stem}", "provider": "screenshot", "kind": "photo", "title": (it.get("title") or host)[:140],
+        host = urllib.parse.urlsplit(it["url"]).hostname or ""
+        title = re.sub(r"[\x00-\x1f\x7f]+", " ", str(it.get("title") or "")).strip()
+        add_credit(project, {"id": f"screenshot-{Path(it['file']).stem}", "provider": "screenshot", "kind": "photo", "title": (title or host)[:140],
                              "url": it["url"], "author": host, "license": "Screenshot of a third-party website (no open licence)", "license_url": "",
                              "attribution_required": False, "risk": "platform", "file": rel, "hidden_banners": it.get("hidden", 0)})
         log(f"shot {it['url']} -> {rel}" + (f"  ({it['hidden']} banner element(s) hidden)" if it.get("hidden") else ""))
@@ -636,7 +642,7 @@ def cli(argv=None) -> int:
     a.add_argument("--accept-risk", action="store_true", help="download an asset whose licence is not verified")
     a = sp.add_parser("shot"); a.add_argument("project"); a.add_argument("urls", nargs="+"); a.add_argument("--width", type=int, default=1440)
     a.add_argument("--height", type=int, default=900); a.add_argument("--dpr", type=float, default=2); a.add_argument("--full", action="store_true")
-    a.add_argument("--wait", type=float, default=2.5); a.add_argument("--keep-banners", action="store_true")
+    a.add_argument("--wait", type=float, default=2.5); a.add_argument("--keep-banners", action="store_true"); a.add_argument("--allow-private", action="store_true")
     a = sp.add_parser("logo"); a.add_argument("project"); a.add_argument("brand"); a.add_argument("--color", default="brand")
     a = sp.add_parser("icon"); a.add_argument("project"); a.add_argument("q"); a.add_argument("--color"); a.add_argument("-n", type=int, default=12)
     a = sp.add_parser("emoji"); a.add_argument("project"); a.add_argument("emoji"); a.add_argument("--set", dest="eset", default="openmoji", choices=["openmoji", "twemoji"])
@@ -654,7 +660,7 @@ def cli(argv=None) -> int:
     elif ns.cmd == "get":
         return 0 if len(get(ns.project, ns.ids, ns.accept_risk)) == len(ns.ids) else 1
     elif ns.cmd == "shot":
-        return 0 if shot(ns.project, ns.urls, ns.width, ns.height, ns.dpr, ns.full, ns.wait, ns.keep_banners) else 1
+        return 0 if shot(ns.project, ns.urls, ns.width, ns.height, ns.dpr, ns.full, ns.wait, ns.keep_banners, ns.allow_private) else 1
     elif ns.cmd in ("logo", "icon", "emoji"):
         import icons
         if ns.cmd == "logo":

@@ -38,7 +38,7 @@ def decode(path: Path | str, start: float | None = None, dur: float | None = Non
     """Any audio or video file -> float32 stereo at 48 kHz."""
     import numpy as np
     cmd = [ffmpeg_bin(), "-v", "error"] + (["-ss", str(start)] if start else []) + (["-t", str(dur)] if dur else [])
-    cmd += ["-i", str(path), "-vn", "-ac", "2", "-ar", str(SR), "-f", "f32le", "-"]
+    cmd += ["-protocol_whitelist", "file,pipe", "-i", str(path), "-vn", "-ac", "2", "-ar", str(SR), "-f", "f32le", "-"]
     r = subprocess.run(cmd, capture_output=True)
     if r.returncode or not r.stdout:
         raise FishError(f"could not read sound from {Path(path).name}: {r.stderr.decode('utf-8', 'replace')[-160:].strip() or 'no audio stream'}")

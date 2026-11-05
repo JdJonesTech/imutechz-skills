@@ -434,7 +434,7 @@ def test_shot_is_credited_as_platform_tier(proj, tmp_path):
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(tmp_path / "site")))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        out = assets.shot(proj, [f"http://127.0.0.1:{srv.server_port}/"], width=640, height=360)
+        out = assets.shot(proj, [f"http://127.0.0.1:{srv.server_port}/"], width=640, height=360, allow_private=True)
     finally:
         srv.shutdown()
     rec = fvnet.load_credits(proj)[0]
@@ -523,3 +523,117 @@ def test_pack_is_found_by_the_library_and_credits_what_a_video_plays(proj):
     txt = fvnet.credits_text(proj)
     assert txt.startswith("Credits:") and "lonemonk" in txt and "CC BY" in txt
     assert qa.asset_licences(proj)["status"] == "PASS"
+
+
+# ------------------------------------------------------------------ security review fixes
+def test_strict_license_url_only_trusts_creativecommons_org():
+    ok = lambda u: fvnet.strict_license_url(u)
+    assert ok("https://creativecommons.org/licenses/by/4.0/")["label"] == "CC BY 4.0"
+    assert ok("http://www.creativecommons.org/licenses/by-sa/3.0")["label"] == "CC BY-SA 3.0"
+    assert ok("https://creativecommons.org/publicdomain/zero/1.0/")["label"] == "CC0"
+    assert ok("https://creativecommons.org/publicdomain/mark/1.0/")["label"] == "Public Domain"
+    for bad in ("https://x.example/attribution-ok", "https://creativecommons.org.evil.example/licenses/by/4.0/", "https://evil.example/?u=creativecommons.org/licenses/by/4.0/",
+                "https://creativecommons.org/licenses/by/4.0/../../x", "https://u:p@creativecommons.org/licenses/by/4.0/", "ftp://creativecommons.org/licenses/by/4.0/", "", None):
+        assert not ok(bad)["ok"], bad
+    assert ok("https://creativecommons.org/licenses/by-nc/4.0/")["restricted"] and ok("https://creativecommons.org/licenses/by-nd/2.0/")["restricted"]
+
+
+def test_archive_trusts_only_real_cc_pages(monkeypatch, proj):
+    mock_urlopen(monkeypatch, {"advancedsearch": {"response": {"docs": [
+        {"identifier": "good", "title": "G", "licenseurl": "https://creativecommons.org/licenses/by/4.0/"},
+        {"identifier": "fake", "title": "F", "licenseurl": "https://x.example/attribution-ok"},
+        {"identifier": "nc", "title": "N", "licenseurl": "https://creativecommons.org/licenses/by-nc/4.0/"}]}}})
+    by = {r["id"]: r for r in assets._archive("x", "video", 10)}
+    assert by["archive-good"]["risk"] == "safe" and by["archive-good"]["license"] == "CC BY 4.0"
+    assert by["archive-fake"]["risk"] == "unverified" and "nc" not in "".join(by) .replace("archive-", "")[:0] and "archive-nc" not in by
+
+
+def test_private_hosts_and_url_cleaning():
+    for h in ("localhost", "127.0.0.1", "10.1.2.3", "192.168.0.5", "169.254.169.254", "172.16.0.1", "::1", "printer.local", "db.internal", "0.0.0.0"):
+        assert fvnet.private_host(h), h
+    assert not fvnet.private_host("93.184.216.34")
+    assert fvnet.strip_userinfo("https://user:pw@example.com:8443/p?q=1#f") == "https://example.com:8443/p?q=1"
+
+
+def test_shot_refuses_private_addresses_unless_allowed(proj):
+    with pytest.raises(FishError, match="private"):
+        assets.shot(proj, ["http://127.0.0.1:9/"])
+    with pytest.raises(FishError, match="private"):
+        assets.shot(proj, ["http://169.254.169.254/latest/meta-data/"])
+
+
+def test_shot_node_guard():
+    out = subprocess.run(["node", "-e", """import('./scripts/shot.mjs').then(async m => console.log(JSON.stringify([m.privateAddress('10.0.0.1'), m.privateAddress('::ffff:127.0.0.1'), m.privateAddress('8.8.8.8'), await m.privateHost('localhost'), await m.privateHost('x.local')])))"""],
+                         cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    assert json.loads(out) == [True, True, False, True, True]
+    r = subprocess.run(["node", "scripts/shot.mjs", "/tmp/none", "http://127.0.0.1:1/"], cwd=ROOT, capture_output=True, text=True)
+    assert r.returncode != 0 and "private" in (r.stderr + r.stdout)
+
+
+@pytest.mark.skipif(not Path("/usr/bin/google-chrome").exists() and not __import__("os").environ.get("CHROME"), reason="needs Chrome")
+def test_shot_aborts_subrequests_to_private_hosts(proj, tmp_path):
+    """A public-looking page (here a local one, allowed explicitly) cannot be the only guard: with the guard on, the
+    node script refuses the page; with --allow-private it loads and the credit has no credentials in its URL."""
+    (tmp_path / "s").mkdir()
+    (tmp_path / "s" / "index.html").write_text("<title>T\u0007itle</title><h1>x</h1>", encoding="utf-8")
+    import functools
+    import http.server
+    import threading
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(tmp_path / "s")))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        out = assets.shot(proj, [f"http://user:secret@127.0.0.1:{srv.server_port}/"], width=400, height=300, allow_private=True)
+    finally:
+        srv.shutdown()
+    rec = fvnet.load_credits(proj)[0]
+    assert out and "secret" not in json.dumps(rec) and "user" not in rec["url"] and not re.search(r"[\x00-\x1f]", rec["title"]) and rec["author"] == "127.0.0.1"
+
+
+def test_svg_backslash_attrs_and_depth():
+    out = fvnet.sanitize_svg('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1" fill="u\\72l(https://evil.example)" id="ok"/></svg>')
+    assert "\\" not in out and 'id="ok"' in out
+    deep = '<svg xmlns="http://www.w3.org/2000/svg">' + "<g>" * 200 + "</g>" * 200 + "</svg>"
+    with pytest.raises(FishError):
+        fvnet.sanitize_svg(deep)
+    with pytest.raises(FishError):
+        fvnet.sanitize_svg('<svg xmlns="http://www.w3.org/2000/svg">' + "<g>" * 20000 + "</svg>")
+
+
+def test_redirects_stay_http_and_drop_credentials_across_hosts():
+    import urllib.request
+    h = fvnet._SafeRedirect()
+    req = urllib.request.Request("https://a.example/x", headers={"Authorization": "Bearer T", "Cookie": "c=1"})
+    same = h.redirect_request(req, None, 302, "Found", {}, "https://a.example/y")
+    assert same.get_header("Authorization") == "Bearer T"
+    other = h.redirect_request(req, None, 302, "Found", {}, "https://b.example/y")
+    assert other.get_header("Authorization") is None and other.get_header("Cookie") is None
+    with pytest.raises(fvnet.NetError):
+        h.redirect_request(req, None, 302, "Found", {}, "file:///etc/passwd")
+
+
+def test_ffmpeg_still_decodes_ordinary_formats_with_the_protocol_whitelist(tmp_path):
+    for ext, codec in (("webm", ["-c:a", "libvorbis"]), ("ogv", ["-c:a", "libvorbis"]), ("mp4", [])):
+        v = tmp_path / f"v.{ext}"
+        ff("-f", "lavfi", "-i", "testsrc=duration=1:size=160x90:rate=10", "-f", "lavfi", "-i", "sine=duration=1", *(["-c:v", "libvpx"] if ext == "webm" else ["-c:v", "libtheora"] if ext == "ogv" else ["-pix_fmt", "yuv420p"]), *codec, "-shortest", str(v))
+        assert len(sounds.decode(v)) > 40000, ext
+        assert memes.cut(proj_for(tmp_path, ext), v, "c", start=0, dur=0.5, source="own")["frames"] >= 4, ext
+    for ext in ("wav", "ogg"):
+        a = tmp_path / f"a.{ext}"
+        ff("-f", "lavfi", "-i", "sine=duration=1", str(a))
+        assert len(sounds.decode(a)) > 40000 and len(sfx.decode(a)) > 40000
+
+
+def proj_for(tmp_path, name):
+    p = tmp_path / f"p-{name}"
+    p.mkdir()
+    (p / "brief.yaml").write_text("title: t\n", encoding="utf-8")
+    return p
+
+
+def test_meme_scene_focus_and_clip_names_are_validated():
+    js = (ROOT / "scripts" / "stage" / "scenes" / "meme.js").read_text(encoding="utf-8")
+    assert r"/^[\d.%\s]+$/.test" in js
+    sb = {"scenes": [{"id": "a", "type": "meme", "params": {"clip": "../x"}}, {"id": "b", "type": "meme", "params": {"clip": "ok", "inset": {"clip": "a/b"}}},
+                     {"id": "c", "type": "meme", "params": {"clip": "fine-1"}}]}
+    errs, _ = storyboard.validate(sb, None)
+    assert len([e for e in errs if "clip name" in e]) == 2

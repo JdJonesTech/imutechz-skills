@@ -43,6 +43,13 @@
       const credH = p.credit ? 48 * u : 0;
       const fx = c.safe.x, fy = c.safe.y, fw = c.safe.w, fh = c.safe.h - credH;
       st.main = { src: p.src, clip: p.clip, frames: p.frames, fps: p.fps };
+      /* portrait: the safe area stops above the caption band and the platform UI, so a blurred copy of the
+         picture fills the whole frame behind the card and no part of the screen is bare */
+      if (c.P) {
+        st.fill = el("img", "abs", root);
+        st.fill.style.cssText += `;left:${-0.06 * c.W}px;top:${-0.06 * c.H}px;width:${1.12 * c.W}px;height:${1.12 * c.H}px;object-fit:cover;filter:blur(${34 * u}px) brightness(.42) saturate(.9)`;
+        L.layer(st.fill, -700);
+      }
       const wrap = (st.wrap = el("div", "abs", root));
       L.pos(wrap, fx, fy, fw, fh);
       wrap.style.cssText += ";overflow:hidden;background:#111;border-radius:" + 14 * u + "px;box-shadow:0 " + 14 * u + "px " + 40 * u + "px rgba(0,0,0,.45)";
@@ -53,7 +60,7 @@
         st.back.style.cssText = "position:absolute;inset:-6%;width:112%;height:112%;object-fit:cover;filter:blur(" + 28 * u + "px) brightness(.55)";
       }
       st.img = el("img", "", wrap);
-      st.img.style.cssText = `position:absolute;inset:0;width:100%;height:100%;object-fit:${full ? "cover" : "contain"};transform-origin:${p.focus || "50% 45%"}`;
+      st.img.style.cssText = `position:absolute;inset:0;width:100%;height:100%;object-fit:${full ? "cover" : "contain"};transform-origin:${/^[\d.%\s]+$/.test(String(p.focus || "")) ? p.focus : "50% 45%"}`;
       /* captions: heavy outlined type, fitted to the frame, plain text only */
       const cap = (text, pos) => {
         const n = el("div", "", wrap);
@@ -90,6 +97,7 @@
       const p = c.p, beat = c.beat;
       show(st.img, st.main, t, c.fps, p.loop);
       if (st.back) show(st.back, st.main, t, c.fps, p.loop);
+      if (st.fill) show(st.fill, st.main, t, c.fps, p.loop);
       /* the picture drifts in slowly and punches in on the beat */
       const tp = (p.punch_on != null ? p.punch_on : 2.5) * beat, amt = p.punch != null ? p.punch : 0.14;
       const z = 1 + 0.03 * (t / c.dur) + amt * L.spring(t - tp, L.SPRING.playful);
@@ -111,7 +119,7 @@
         st.ins.style.transform = `scale(${q.toFixed(4)}) rotate(${(-4 * (1 - q)).toFixed(3)}deg)`;
       }
       if (st.cr) L.enter(st.cr, t, beat * 2, 0.4, "fade");
-      L.H.outAll([st.wrap, st.cr].filter(Boolean), t, c, 0.25);
+      L.H.outAll([st.wrap, st.cr, st.fill].filter(Boolean), t, c, 0.25);
     },
     cues(c) {
       const p = c.p, b = c.beat, out = [L.cue(-L.SWISH_LEAD, "whoosh", 2)];

@@ -43,6 +43,48 @@ def http_only(url: str) -> str:
     return str(url)
 
 
+class _SafeRedirect(urllib.request.HTTPRedirectHandler):
+    """Every redirect target must still be http(s), and a credential never follows a redirect to another host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        http_only(urllib.parse.urljoin(req.full_url, newurl))
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None and urllib.parse.urlsplit(new.full_url).netloc.lower() != urllib.parse.urlsplit(req.full_url).netloc.lower():
+            for h in ("Authorization", "Cookie", "Proxy-authorization"):
+                new.remove_header(h)
+        return new
+
+
+urllib.request.install_opener(urllib.request.build_opener(_SafeRedirect()))
+
+
+def private_host(host: str | None) -> bool:
+    """True for a host that must not be fetched on a user's behalf: localhost, .local / .internal names, and any
+    loopback, private, link-local, reserved or unspecified address (a name is resolved and every answer is checked)."""
+    import ipaddress
+    import socket
+    h = (host or "").strip("[]").lower().rstrip(".")
+    if not h or h == "localhost" or h.endswith((".localhost", ".local", ".internal", ".localdomain", ".home.arpa")):
+        return True
+    try:
+        addrs = [ipaddress.ip_address(h)]
+    except ValueError:
+        try:
+            addrs = [ipaddress.ip_address(a[4][0].split("%")[0]) for a in socket.getaddrinfo(h, None)]
+        except (OSError, ValueError):
+            return False                          # unresolvable: the browser will fail on its own
+    return any(a.is_private or a.is_loopback or a.is_link_local or a.is_reserved or a.is_unspecified or a.is_multicast for a in addrs)
+
+
+def strip_userinfo(url: str) -> str:
+    """The URL without user:pass@ (so a credential is never logged, written to credits.json or sent to a browser)."""
+    sp = urllib.parse.urlsplit(url)
+    host = (sp.hostname or "")
+    if ":" in host:
+        host = f"[{host}]"
+    return urllib.parse.urlunsplit((sp.scheme, host + (f":{sp.port}" if sp.port else ""), sp.path, sp.query, ""))
+
+
 def safe_name(text: str, maxlen: int = 80) -> str:
     """A file-name-safe token: ids and titles from an API never choose a folder (no slashes, no leading dots)."""
     import re
@@ -148,6 +190,31 @@ def norm_license(raw: str | None, url: str | None = None) -> dict:
     return {"label": str(raw or url), "url": url or "", "ok": False, "attribution": True}
 
 
+_CC_PATHS = [(r"/licenses/by/(\d\.\d)/?", "CC BY", "licenses/by", True), (r"/licenses/by-sa/(\d\.\d)/?", "CC BY-SA", "licenses/by-sa", True),
+             (r"/publicdomain/zero/1\.0/?", "CC0", None, False), (r"/publicdomain/mark/1\.0/?", "Public Domain", None, False)]
+
+
+def strict_license_url(url: str | None) -> dict:
+    """Judge a licence link that came from a provider's response (an uploader can write anything there).
+    Only a creativecommons.org URL in a known licence path counts: {ok, label, url, attribution, restricted}.
+    A creativecommons.org NC / ND link is `restricted` (dropped); every other link is just not ok (unverified)."""
+    import re
+    try:
+        sp = urllib.parse.urlsplit(str(url or "").strip())
+    except ValueError:
+        return {"ok": False, "restricted": False}
+    if sp.scheme.lower() not in ("http", "https") or (sp.hostname or "").lower() not in ("creativecommons.org", "www.creativecommons.org") or sp.port or sp.username:
+        return {"ok": False, "restricted": False}
+    for pat, label, base, attr in _CC_PATHS:
+        m = re.fullmatch(pat, sp.path)
+        if m:
+            ver = m.group(1) if m.groups() else ""
+            lab = f"{label} {ver}".strip()
+            return {"ok": True, "label": lab, "url": f"https://creativecommons.org/{base}/{ver}/" if base else f"https://creativecommons.org{sp.path.rstrip('/')}/",
+                    "attribution": attr, "restricted": False}
+    return {"ok": False, "restricted": bool(re.search(r"/licenses/by-(nc|nd)", sp.path))}
+
+
 # ------------------------------------------------------------------ risk tiers
 # Every candidate and credit record carries one:
 #   safe        licence evidence that allows commercial reuse (public domain, CC0, CC BY / BY-SA, a stock
@@ -203,31 +270,40 @@ def sanitize_svg(text: str | bytes) -> str:
         root = ET.fromstring(raw)
     except ET.ParseError as e:
         raise FishError(f"SVG refused: not well-formed ({e})")
+    except RecursionError:
+        raise FishError("SVG refused: nested too deeply")
     local = lambda name: name.rsplit("}", 1)[-1]
     if local(root.tag).lower() != "svg":
         raise FishError("SVG refused: the root element is not <svg>")
 
-    def clean(node) -> None:
+    def clean(node, depth: int = 0) -> None:
+        if depth > 64:
+            raise FishError("SVG refused: nested more than 64 levels")
         for child in list(node):
             if local(child.tag).lower() not in SVG_TAGS:
                 node.remove(child)
                 continue
-            clean(child)
+            clean(child, depth + 1)
             if local(child.tag).lower() == "use" and not any(local(k).lower() == "href" for k in child.attrib):
                 node.remove(child)  # its external reference was stripped: nothing left to draw
         for k in list(node.attrib):
             name, val = local(k).lower(), str(node.attrib[k])
-            if name.startswith("on") or name == "style" and re.search(r"url\(|@import|expression", val, re.I):
+            if "\\" in val:
+                del node.attrib[k]              # a CSS escape can spell url( past the filter below
+            elif name.startswith("on") or name == "style" and re.search(r"url\(|@import|expression", val, re.I):
                 del node.attrib[k]
             elif name == "href" and not val.startswith("#"):
                 del node.attrib[k]
             elif re.search(r"javascript:|data:text/html", val, re.I) or re.search(r"url\(\s*['\"]?(?!#)", val, re.I):
                 del node.attrib[k]
 
-    clean(root)
-    ET.register_namespace("", "http://www.w3.org/2000/svg")
-    ET.register_namespace("xlink", "http://www.w3.org/1999/xlink")
-    return ET.tostring(root, encoding="unicode")
+    try:
+        clean(root)
+        ET.register_namespace("", "http://www.w3.org/2000/svg")
+        ET.register_namespace("xlink", "http://www.w3.org/1999/xlink")
+        return ET.tostring(root, encoding="unicode")
+    except RecursionError:
+        raise FishError("SVG refused: nested too deeply")
 
 
 # ------------------------------------------------------------------ credits

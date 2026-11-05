@@ -213,7 +213,7 @@ def sheet(video, out=None, every: float = 2.0, start: float = 0.0, end: float | 
         cmd = [ffmpeg_bin(), "-hide_banner", "-loglevel", "error", "-y", "-ss", str(start)]
         if end is not None:
             cmd += ["-t", str(max(0.1, end - start))]
-        cmd += ["-i", str(video), "-an", "-vf", f"fps=1/{every:.4f},scale={int(width)}:-2", "-frames:v", "240", "-q:v", "4", str(tmp / "f_%04d.jpg")]
+        cmd += ["-protocol_whitelist", "file,pipe", "-i", str(video), "-an", "-vf", f"fps=1/{every:.4f},scale={int(width)}:-2", "-frames:v", "240", "-q:v", "4", str(tmp / "f_%04d.jpg")]
         run(cmd)
         frames = sorted(tmp.glob("f_*.jpg"))
         if not frames:
