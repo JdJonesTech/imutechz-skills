@@ -294,6 +294,13 @@ def qa_platform(project: Path, platform: str, lint: bool = True, preview: bool =
         res.append({"check": "facts", "status": "PASS" if not fc["unsupported"] else "FAIL", "detail": f"{fc['checked']} numbers checked" + (f"; unsupported: {fc['unsupported'][:5]}" if fc["unsupported"] else "")})
     except FishError as e:
         res.append({"check": "facts", "status": "WARN", "detail": str(e)})
+    # design QA (advice only: WARN) and the thumbnails, once, on the first platform
+    if lint:
+        import design as designmod
+        res.append(designmod.qa_row(project, platform))
+    import storyboard as sbmod, thumbs
+    if platform == sbmod.platforms_of(cfg)[0]:
+        res += thumbs.qa_rows(project)
     sheet = contact_sheet(video, b / "contact.png", tl["duration"] if not preview else float(probe(video)["format"]["duration"]), cols=5 if tl["W"] >= tl["H"] else 6, width=384 if tl["W"] >= tl["H"] else 216)
     status = "FAIL" if any(r["status"] == "FAIL" for r in res) else "WARN" if any(r["status"] == "WARN" for r in res) else "PASS"
     rep = {"platform": platform, "video": str(video), "status": status, "checks": res, "contact_sheet": str(sheet)}
