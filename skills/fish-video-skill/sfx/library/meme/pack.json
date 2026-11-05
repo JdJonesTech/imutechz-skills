@@ -1,0 +1,262 @@
+{
+ "name": "meme",
+ "about": "Short licensed recordings for comedy and meme cues. Each cue type maps to one file; levels are default dBFS. Licences: CC0, public domain, CC BY (credit required: see LICENSES.md).",
+ "cues": {
+  "sadtrombone": [
+   "sadtrombone.ogg"
+  ],
+  "sting": [
+   "sting.ogg"
+  ],
+  "rimshot": [
+   "rimshot.ogg"
+  ],
+  "applause": [
+   "applause.ogg"
+  ],
+  "laugh": [
+   "laugh.ogg"
+  ],
+  "boing": [
+   "boing.ogg"
+  ],
+  "gong": [
+   "gong.ogg"
+  ],
+  "whip": [
+   "whip.ogg"
+  ],
+  "kazoo": [
+   "kazoo.ogg"
+  ],
+  "partyhorn": [
+   "partyhorn.ogg"
+  ],
+  "horn": [
+   "horn.ogg"
+  ],
+  "clock": [
+   "clock.ogg"
+  ]
+ },
+ "levels": {
+  "sadtrombone": -14,
+  "sting": -13,
+  "rimshot": -14,
+  "applause": -18,
+  "laugh": -16,
+  "boing": -16,
+  "gong": -15,
+  "whip": -15,
+  "kazoo": -16,
+  "partyhorn": -16,
+  "horn": -14,
+  "clock": -22
+ },
+ "files": {
+  "sadtrombone.ogg": {
+   "cue": "sadtrombone",
+   "use": "sad trombone: a failure",
+   "title": "Sad Trombone.wav",
+   "author": "Sad Tromboner",
+   "license": "CC BY 4.0",
+   "license_url": "https://creativecommons.org/licenses/by/4.0",
+   "source_url": "https://commons.wikimedia.org/wiki/File:Sad_Trombone.wav",
+   "original_sha256": "9a9c89534fa86ffe2753277e1dfa702efd53ece57d16447f57769c7d127c81b2",
+   "sha256": "8ab7267157c73f76189ab23cc503733697491157d609be3bacf1e5ffc8c4bd81",
+   "trim_seconds": [
+    0.57,
+    3.95
+   ],
+   "fade_out_seconds": 0.03,
+   "duration_seconds": 3.38
+  },
+  "sting.ogg": {
+   "cue": "sting",
+   "use": "three-note dramatic sting: a reveal or a shock",
+   "title": "Dun dun duuun!.ogg",
+   "author": "copyc4t",
+   "license": "CC BY 4.0",
+   "license_url": "https://creativecommons.org/licenses/by/4.0",
+   "source_url": "https://commons.wikimedia.org/wiki/File:Dun_dun_duuun!.ogg",
+   "original_sha256": "c7e8459592901181222a01c1df12f6148ca181c3cb0054ac61895f9b54789ad4",
+   "sha256": "d57dc9f2a7dafe9df2474ac0b6cf5f0487012ddb7c23d4ba3b8c8d922471ab49",
+   "trim_seconds": [
+    0.0,
+    3.6
+   ],
+   "fade_out_seconds": 0.8,
+   "duration_seconds": 3.6
+  },
+  "rimshot.ogg": {
+   "cue": "rimshot",
+   "use": "rimshot: a joke's button",
+   "title": "Kevin MacLeod assorted rimshots - Bah-dum.wav",
+   "author": "Kevin MacLeod",
+   "license": "CC BY 3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0",
+   "source_url": "https://commons.wikimedia.org/wiki/File:Kevin_MacLeod_assorted_rimshots_-_Bah-dum.wav",
+   "original_sha256": "eaaca6f24fb059435fb3f1b24d571f8e6849126fe64f3535caf38b50026e1252",
+   "sha256": "a4b29749ca3ce2181a905448247fdf829138a306fbb1d8fa918b89b75a22d6b2",
+   "trim_seconds": [
+    0.0,
+    1.6
+   ],
+   "fade_out_seconds": 0.5,
+   "duration_seconds": 1.6
+  },
+  "applause.ogg": {
+   "cue": "applause",
+   "use": "applause: a win",
+   "title": "277021 sandermotions applause-2.wav",
+   "author": "Sandermotions",
+   "license": "CC0",
+   "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+   "source_url": "https://commons.wikimedia.org/wiki/File:277021_sandermotions_applause-2.wav",
+   "original_sha256": "81d52260cee58e0f284a0236c9d4a0e40463df182ea869ee14da70bfa6258b5e",
+   "sha256": "cd41aa5448b3e676b00d24d7b230f20b94adfc07601ffdf59b486e33bf205ad5",
+   "trim_seconds": [
+    0.0,
+    3.8
+   ],
+   "fade_out_seconds": 0.6,
+   "duration_seconds": 3.8
+  },
+  "laugh.ogg": {
+   "cue": "laugh",
+   "use": "crowd laugh",
+   "title": "72842 lonemonk approx-800-laugh-1.wav",
+   "author": "lonemonk on freesound.org",
+   "license": "CC BY 3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0",
+   "source_url": "https://commons.wikimedia.org/wiki/File:72842_lonemonk_approx-800-laugh-1.wav",
+   "original_sha256": "c447291c59ac76bade7d38393c34281bc8fdbde5f736a0202eb9fd049084007f",
+   "sha256": "090eb728472511e38ae9ad753ee5acd518ac5878e61920f6068552cdfec70156",
+   "trim_seconds": [
+    0.0,
+    2.44
+   ],
+   "fade_out_seconds": 0.4,
+   "duration_seconds": 2.44
+  },
+  "boing.ogg": {
+   "cue": "boing",
+   "use": "spring boing: a bounce, a surprise",
+   "title": "Boing raw.ogg",
+   "author": "cfork",
+   "license": "CC BY 4.0",
+   "license_url": "https://creativecommons.org/licenses/by/4.0",
+   "source_url": "https://commons.wikimedia.org/wiki/File:Boing_raw.ogg",
+   "original_sha256": "797cd817044bcb861d94ca489afaed94d607c75b35da810edc2169b03095d64e",
+   "sha256": "96989ab16c1a30182ed443d7913167ab81bb9134302574125249434edb2c6a96",
+   "trim_seconds": [
+    0.02,
+    2.9
+   ],
+   "fade_out_seconds": 0.03,
+   "duration_seconds": 2.88
+  },
+  "gong.ogg": {
+   "cue": "gong",
+   "use": "gong: a dramatic hit",
+   "title": "Gong or bell vibrant (short).ogg",
+   "author": "PDSounds description: http://www.pdsounds.org/sounds/gong_or_bell_vibrant",
+   "license": "CC0",
+   "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+   "source_url": "https://commons.wikimedia.org/wiki/File:Gong_or_bell_vibrant_(short).ogg",
+   "original_sha256": "f57283d08a0ecb052425af1ac1457f827fa27f423d49158963b3370c89fc942d",
+   "sha256": "f25212384e88e2b30704398d5af723e091f4d415655ba19d7ae068ea1db93517",
+   "trim_seconds": [
+    0.27,
+    4.2
+   ],
+   "fade_out_seconds": 0.8,
+   "duration_seconds": 3.93
+  },
+  "whip.ogg": {
+   "cue": "whip",
+   "use": "whip crack: a snap transition",
+   "title": "Whip-sound.ogg",
+   "author": "Mike Koenig",
+   "license": "CC BY 3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0",
+   "source_url": "https://commons.wikimedia.org/wiki/File:Whip-sound.ogg",
+   "original_sha256": "2d2df16b3ec41b9b73e023a0dea67a44916b676779983f583e0bc1e704cbbfba",
+   "sha256": "702efc931ff621de4f0c8a7fee94354da08aa42f747a8cc6292b7be22c47fe2d",
+   "trim_seconds": [
+    0.16,
+    0.66
+   ],
+   "fade_out_seconds": 0.03,
+   "duration_seconds": 0.5
+  },
+  "kazoo.ogg": {
+   "cue": "kazoo",
+   "use": "kazoo: silliness",
+   "title": "NoiseCollector KazooA.wav",
+   "author": "NoiseCollector",
+   "license": "CC BY 3.0",
+   "license_url": "https://creativecommons.org/licenses/by/3.0",
+   "source_url": "https://commons.wikimedia.org/wiki/File:NoiseCollector_KazooA.wav",
+   "original_sha256": "fc6dd6c6ec89beafadb0bd299630a217bd1f6a5e80c614718bd4a0a8ff3841e8",
+   "sha256": "d2d762a2a4e75decdeacd6de50e41874360b381d35f60fdc9dc1a91a133a2476",
+   "trim_seconds": [
+    0.02,
+    1.8
+   ],
+   "fade_out_seconds": 0.25,
+   "duration_seconds": 1.78
+  },
+  "partyhorn.ogg": {
+   "cue": "partyhorn",
+   "use": "party horn: celebration",
+   "title": "Luftrüssel.ogg",
+   "author": "Flo Sorg",
+   "license": "Public domain",
+   "license_url": "",
+   "source_url": "https://commons.wikimedia.org/wiki/File:Luftr%C3%BCssel.ogg",
+   "original_sha256": "00dc959889e010a1380d42c91c33ac9e0352cc4e6a98169eb15bf796e1df0f72",
+   "sha256": "4a589858204aa530e76d8901e022a5c5777a597358bc044e67e3952ee91eb3e6",
+   "trim_seconds": [
+    0.64,
+    2.15
+   ],
+   "fade_out_seconds": 0.03,
+   "duration_seconds": 1.52
+  },
+  "horn.ogg": {
+   "cue": "horn",
+   "use": "air horn (a train horn recording): hype",
+   "title": "Sound of American Train Horn Nathan Airchime K5LA.ogg",
+   "author": "WeenyBeany",
+   "license": "CC BY 4.0",
+   "license_url": "https://creativecommons.org/licenses/by/4.0",
+   "source_url": "https://commons.wikimedia.org/wiki/File:Sound_of_American_Train_Horn_Nathan_Airchime_K5LA.ogg",
+   "original_sha256": "09070f924d21e11b8278896d4ebd9ab9038f7545350a605b49ed759044bbb5e7",
+   "sha256": "598a677ca15bfb6afb8303f72755759f5c4c29fc74a67ee328cfb35a82d9dda5",
+   "trim_seconds": [
+    0.0,
+    2.4
+   ],
+   "fade_out_seconds": 0.35,
+   "duration_seconds": 2.4
+  },
+  "clock.ogg": {
+   "cue": "clock",
+   "use": "clock ticking: waiting, thinking",
+   "title": "Clock (tic tac).ogg",
+   "author": "Saaabaaato",
+   "license": "CC0",
+   "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+   "source_url": "https://commons.wikimedia.org/wiki/File:Clock_(tic_tac).ogg",
+   "original_sha256": "a40bf536fe879024a2d66e96760d711f054c5e11e2978e4063f442a7dbd426a4",
+   "sha256": "7fbc66de6b1ef82e7132b7aac2e796c793554e3e2ea90184dd5be65648ba4c6f",
+   "trim_seconds": [
+    0.1,
+    4.1
+   ],
+   "fade_out_seconds": 0.2,
+   "duration_seconds": 4.0
+  }
+ }
+}

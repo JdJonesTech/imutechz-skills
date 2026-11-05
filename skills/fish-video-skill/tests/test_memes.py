@@ -487,3 +487,39 @@ def test_memes_yaml_has_the_named_sources_and_only_manual_routes_for_blocked_one
     assert by["myinstants"]["access"] == "manual" and by["memeinstants"]["access"] == "manual"
     assert all(s["risk"] == "unverified" for s in cfg["sources"] if s["id"] in ("imgflip", "vlipsy", "myinstants", "memeinstants"))
     assert not any(k in json.dumps(cfg).lower() for k in ("giphy.com/v1", "api.tenor", "reddit.com/r/"))
+
+
+# ------------------------------------------------------------------ the committed sound pack
+PACK = ROOT / "sfx" / "library" / "meme"
+
+
+def test_meme_pack_is_complete_licensed_small_and_unclipped():
+    import hashlib
+    pj = load_json(PACK / "pack.json")
+    assert len(pj["cues"]) == 12 and set(pj["levels"]) == set(pj["cues"])
+    total = 0
+    for cue, files in pj["cues"].items():
+        for fn in files:
+            f = PACK / fn
+            info = pj["files"][fn]
+            assert f.is_file() and hashlib.sha256(f.read_bytes()).hexdigest() == info["sha256"], fn
+            assert info["author"] and info["source_url"].startswith("https://") and len(info["original_sha256"]) == 64
+            nl = fvnet.norm_license(info["license"], info["license_url"])
+            assert nl["ok"] and "SA" not in nl["label"], (fn, nl)                        # CC0, public domain or CC BY only
+            x = sounds.decode(f)
+            assert 0.4 < len(x) / sounds.SR < 4.5 and np.abs(x).max() < 0.99 and np.sqrt((x ** 2).mean()) > 0.01, fn
+            total += f.stat().st_size
+        assert -30 <= pj["levels"][cue] <= -10
+    assert total < 3 * 1024 * 1024
+    assert (PACK / "LICENSES.md").read_text(encoding="utf-8").count("| ") > 12 * 5
+    assert not (set(pj["cues"]) & qa.synth_cue_types()), "a pack cue must not shadow a built-in synthesised cue"
+
+
+def test_pack_is_found_by_the_library_and_credits_what_a_video_plays(proj):
+    lib = sfx.library(proj)
+    assert {"laugh", "rimshot", "sadtrombone"} <= set(lib) and sfx.levels(proj)["laugh"] == -16
+    assert sfx.credit_pack_files(proj, {lib["laugh"][0], lib["sting"][0]}) == 2
+    assert sfx.credit_pack_files(proj, {lib["laugh"][0]}) == 0                                # idempotent
+    txt = fvnet.credits_text(proj)
+    assert txt.startswith("Credits:") and "lonemonk" in txt and "CC BY" in txt
+    assert qa.asset_licences(proj)["status"] == "PASS"

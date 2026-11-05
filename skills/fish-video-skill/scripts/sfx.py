@@ -74,6 +74,24 @@ def levels(project: Path) -> dict[str, float]:
     return lv
 
 
+def credit_pack_files(project: Path, used) -> int:
+    """A recording from a committed pack (sfx/library/<pack>/pack.json) that the video really plays goes into the
+    project's credits with its author and licence, so a CC BY sound is credited in the description."""
+    import fvnet
+    n = 0
+    for f in sorted(used):
+        pj = f.parent / "pack.json"
+        info = ((load_json(pj) or {}).get("files") or {}).get(f.name) if pj.exists() and (SKILL / "sfx" / "library") in f.parents else None
+        if not info:
+            continue
+        lic = fvnet.norm_license(info.get("license"), info.get("license_url"))
+        n += bool(fvnet.add_credit(project, {"id": f"sfxpack-{f.parent.name}-{f.stem}", "provider": "sound pack", "kind": "sfx", "title": info.get("title") or f.stem,
+                                             "author": info.get("author") or "unknown", "url": info.get("source_url") or "", "license": info.get("license"),
+                                             "license_url": info.get("license_url") or "", "attribution_required": bool(lic.get("attribution")), "risk": "safe",
+                                             "file": f"sfx/library/{f.parent.name}/{f.name}"}))
+    return n
+
+
 def load_brief_mix(project: Path) -> dict:
     """brief.yaml -> mix (empty when the project has no brief)."""
     import yaml
@@ -108,6 +126,7 @@ def build(project: Path, platform: str) -> dict:
     out = np.zeros((n, 2), dtype=np.float32)
     cache: dict[Path, object] = {}
     placed, last = 0, -1.0
+    used: set[Path] = set()
     cues = sorted((q for q in info.get("cues", []) if q.get("type") in lib), key=lambda q: q["t"])
     for k, q in enumerate(cues):
         typ, t = q["type"], float(q["t"])
@@ -118,6 +137,7 @@ def build(project: Path, platform: str) -> dict:
         last = t
         files = lib[typ]
         f = files[int(hashlib.md5(f"{typ}{k}".encode()).hexdigest(), 16) % len(files)]
+        used.add(f)
         if f not in cache:
             cache[f] = decode(f)
         a = cache[f]
@@ -129,6 +149,7 @@ def build(project: Path, platform: str) -> dict:
         seg = a[: max(0, min(len(a), n - i0))]
         out[i0:i0 + len(seg)] += seg * g
         placed += 1
+    credit_pack_files(project, used)
     wav = b / "sfx-samples.wav"
     pcm = np.clip(out, -1, 1).astype("<f4").tobytes()
     import struct
