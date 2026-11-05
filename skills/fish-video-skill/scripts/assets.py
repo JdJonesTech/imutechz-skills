@@ -159,7 +159,7 @@ def _wikimedia(q, kind, n, **opts):
         ii = ((pg.get("videoinfo") if av else pg.get("imageinfo")) or [{}])[0]
         mime = ii.get("mime", "")
         if av:
-            if ii.get("mediatype") != want:
+            if ii.get("mediatype") != want or "midi" in mime.lower():
                 continue
         elif not (mime.startswith("image/") and mime not in ("image/svg+xml", "image/tiff")):
             continue

@@ -213,6 +213,8 @@ def sanitize_svg(text: str | bytes) -> str:
                 node.remove(child)
                 continue
             clean(child)
+            if local(child.tag).lower() == "use" and not any(local(k).lower() == "href" for k in child.attrib):
+                node.remove(child)  # its external reference was stripped: nothing left to draw
         for k in list(node.attrib):
             name, val = local(k).lower(), str(node.attrib[k])
             if name.startswith("on") or name == "style" and re.search(r"url\(|@import|expression", val, re.I):

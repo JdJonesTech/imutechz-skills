@@ -62,8 +62,11 @@ sources:
     evidence: >-
       Terms of Use v1.0 grant access for personal, noncommercial use only, say no part of the site may
       be downloaded or reproduced unless indicated, and forbid software or scripts that generate
-      automated searches, requests or queries. The site links an unauthenticated JSON API at /api/v1/
-      but publishes no terms for it, so it is not called.
+      automated searches, requests or queries. The site does offer a developer API (the footer link
+      "Myinstants API", /api/v1/, read on 2026-11-05): a list and a detail endpoint, 10 requests a minute
+      anonymous, a token on request by e-mail with your use case. The page does not say the terms above are
+      lifted for it, and the grant stays personal and noncommercial, so this tool does not call it. If you
+      want an automated search, e-mail the address on that page for a token and permission first.
 
   - id: memeinstants
     name: Memeinstants
