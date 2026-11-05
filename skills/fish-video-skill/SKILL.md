@@ -1,7 +1,7 @@
 ---
 name: fish-video-skill
 description: Make a premium, upload-ready Short, Reel, TikTok, YouTube or LinkedIn video on any topic. Use it when someone asks for a video, explainer, promo, product or app tour, screen-recorded tutorial, motivational Short, or "a video like this one" (a reference link). It starts with one strict interview (topic, platforms, style, colours, voice, music, SFX, assets, screen recording, API keys), then never asks again until the final review. It researches trends and facts, dissects reference videos, collects licensed real assets and memes, records the screen with focus zooms and click sounds, and renders deterministic motion graphics with a 3D camera: paper collage, kinetic type, neon diagrams, glow metaphors, whiteboards. It adds a natural voice, a mix balanced for phone speakers and word-pop captions, runs QA and a self-review, packages videos, thumbnails, titles, descriptions, tags and credits, and cleans up only with permission.
-version: 2.3.0
+version: 2.4.0
 license: MIT
 author: ImuTechz
 compatibility: Python 3.10+ (3.12 recommended), Node 18+, a Chromium browser (Brave/Chrome/Edge/Chromium), ffmpeg (bundled via npm). Windows, macOS, Linux. Optional keys ELEVENLABS_API_KEY, PEXELS_API_KEY, PIXABAY_API_KEY, FREESOUND_API_KEY, YOUTUBE_API_KEY; every one has a key-less fallback.
@@ -29,6 +29,7 @@ Read only what the current step needs:
 - Writing any scene → [scene catalogue](references/scene-catalogue.md), including Motion rules and Camera
 - Anything about music, SFX or levels, or "I can't hear the music on my phone" → [sound design](references/sound-design.md)
 - Choosing or directing a voice → [voice direction](references/voice-direction.md)
+- Free local voices (male or female, airy, soft, pace control, `voice setup|audition|check|redo`) → [local voices](references/local-voices.md)
 - Captions and type → [captions & typography](references/captions-and-typography.md)
 - A website or app on screen → [website-tour capture](references/website-tour-capture.md)
 - A reference video to match → [reference breakdowns](references/reference-breakdowns.md), [reference-video analysis](references/reference-video-analysis.md), [trending analysis](references/trending-analysis.md)

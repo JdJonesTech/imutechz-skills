@@ -95,7 +95,7 @@ Without `setuptools<81` it fails with `TypeError: 'NoneType' object is not calla
 
 **Bring it in** as a recording: `fishvideo voiceover <dir> narration.wav`. This route applies no second post chain. Raise `pacing.max_word_gap` (for example to 0.9), or the import cuts the pauses you just made. If the skill's venv cannot install `faster-whisper`, transcribe in another environment and pass the word list to `voiceover.import_recording(project, wav, words=words)`.
 
-Never feed another provider's voice output in as the reference clip. Clone only a voice you have consent to use.
+**Reference clips.** Never use a hosted provider's output (ElevenLabs, edge-tts, Azure, OpenAI, Polly and similar) as a reference clip: their terms do not grant that use, and `voicelab.check_reference` refuses the skill's own output folders and telling file names (a backstop, not proof). A clip you recorded yourself needs `voice.studio.reference_consent: true`. For a gender Chatterbox's built-in voice lacks, the studio makes the reference at run time from a Kokoro preset voice; see [local voices](local-voices.md) for the licence reading.
 
 ### Open-source TTS compared (November 2026; this changes quickly)
 

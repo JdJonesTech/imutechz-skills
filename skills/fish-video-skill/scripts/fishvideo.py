@@ -7,7 +7,8 @@
     fishvideo storyboard <dir> [--table youtube]
     fishvideo factcheck <dir>
     fishvideo capture <dir> [shot ...]
-    fishvideo voice <dir> [--provider elevenlabs|edge-tts|none] [--force]
+    fishvideo voice <dir> [--provider elevenlabs|edge-tts|chatterbox|kokoro|none] [--force]
+    fishvideo voice setup|engines|say|audition|check|redo|measure ...   free local voices (references/local-voices.md)
     fishvideo music <dir> [--platform youtube]
     fishvideo captions <dir>
     fishvideo stills <dir> [--platform youtube] [--at 1,5,9 | --scenes]
@@ -225,6 +226,13 @@ def cmd_doctor(keys: bool = False) -> int:
     opt("rembg", "rembg", 'cut-outs: pip install "rembg[cpu]"')
     opt("kokoro", "kokoro", "local voices: pip install kokoro soundfile")
     opt("faster-whisper", "faster_whisper", "align your own VO: pip install faster-whisper")
+    try:
+        import voicelab
+        for eng, st in voicelab.engines_status().items():
+            if isinstance(st, dict):
+                log(f"  {'ok  ' if st['installed'] else 'info'}  {'tts ' + eng:<14} " + (f"installed ({st['python']})" if st["installed"] else f"not installed (free local voice: fishvideo voice setup --engine {eng})"))
+    except Exception as e:  # noqa: BLE001 - doctor must never fail on an optional engine
+        log(f"  info  local voices   could not check: {str(e)[:80]}")
     lib = SKILL / "sfx" / "library" / "index.json"
     log(f"  {'ok  ' if lib.exists() else 'info'}  sfx library    {'present' if lib.exists() else 'not fetched: fishvideo assets sfx-pack (Kenney CC0); synth SFX used until then'}")
     KEYS = [("ELEVENLABS_API_KEY", "premium voices", "elevenlabs.io > Profile > API keys (paid plan for commercial use)", "edge-tts / Kokoro voices"),
@@ -263,7 +271,7 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--scale", type=float, default=1.0)
             p.add_argument("--workers", type=int, default=4)
             p.add_argument("--fast", action="store_true")
-            p.add_argument("--provider", default=None, choices=["elevenlabs", "edge-tts", "none"])
+            p.add_argument("--provider", default=None, choices=["elevenlabs", "edge-tts", "chatterbox", "kokoro", "none"])
             p.add_argument("--recapture", action="store_true")
             p.add_argument("--skip-reference", action="store_true")
             p.add_argument("--no-lint", action="store_true")
@@ -276,7 +284,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = proj("storyboard"); p.add_argument("--table", default=None)
     proj("factcheck")
     p = proj("capture"); p.add_argument("shots", nargs="*")
-    p = proj("voice"); p.add_argument("--provider", default=None, choices=["elevenlabs", "edge-tts", "none"]); p.add_argument("--force", action="store_true")
+    p = proj("voice"); p.add_argument("--provider", default=None, choices=["elevenlabs", "edge-tts", "chatterbox", "kokoro", "none"]); p.add_argument("--force", action="store_true")
     p = proj("music"); p.add_argument("--platform", default=None)
     proj("captions")
     p = proj("stills"); p.add_argument("--platform", default=None); p.add_argument("--at", default=None); p.add_argument("--scenes", action="store_true"); p.add_argument("--every", default=None)
@@ -300,6 +308,9 @@ def cli(argv=None) -> int:
         return passthru(argv[0], argv[1:])
     if argv and argv[0] == "interview":
         return ivmod.cli(argv[1:])
+    if argv and argv[0] == "voice" and len(argv) > 1 and argv[1] in ("setup", "engines", "say", "audition", "check", "redo", "measure"):
+        import voicelab                            # local voice studio (references/local-voices.md)
+        return voicelab.cli(argv[1:])
     a = build_parser().parse_args(argv)
     if a.cmd == "doctor":
         return cmd_doctor(a.keys)
