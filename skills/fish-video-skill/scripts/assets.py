@@ -1,7 +1,11 @@
 """Asset search, download, licensing and processing.
 
     python scripts/assets.py search <project> "brain" --kind photo|video|audio|sfx|music [--providers pexels,openverse] [-n 12]
-    python scripts/assets.py get <project> <candidate-id> [<candidate-id> ...]
+    python scripts/assets.py get <project> <candidate-id> [<candidate-id> ...] [--accept-risk]
+    python scripts/assets.py shot <project> <url> [<url> ...] [--full] [--width 1440] [--dpr 2]
+    python scripts/assets.py logo <project> <brand> [--color brand|white|black|#hex]
+    python scripts/assets.py icon <project> <query | set:name> [--color #hex]
+    python scripts/assets.py emoji <project> <emoji | UNICODE NAME> [--set openmoji|twemoji]
     python scripts/assets.py cutout <src.png> <dst.png> [--model isnet-general-use]
     python scripts/assets.py clip <project> <src.mp4> <clip_id> [--start 0] [--dur 6] [--fps 30] [--width 1080]
     python scripts/assets.py sfx-pack [dest]
@@ -9,12 +13,15 @@
 
 Providers: pexels (photo/video, PEXELS_API_KEY), pixabay (photo/video,
 PIXABAY_API_KEY), openverse (photo/audio, key-less, cc0/pdm/by/by-sa only),
-wikimedia (photo, key-less, CC0/PD/CC-BY/CC-BY-SA only), nasa (photo/video,
-key-less), freesound (sfx, FREESOUND_API_KEY, CC0 only, hq-mp3 previews).
+wikimedia (photo/video/audio, key-less, CC0/PD/CC-BY/CC-BY-SA only), nasa
+(photo/video, key-less), freesound (sfx, FREESOUND_API_KEY, CC0 only, hq-mp3
+previews), archive (video/audio, Internet Archive, key-less; items with no
+licence are `unverified` and hidden unless asked for).
 
 Unified record: id, provider, kind, title, url, download_url, preview_url,
 width, height, duration, author, author_url, license, license_url,
-attribution_required. `search` writes assets/_candidates/<kind>-<slug>.json
+attribution_required, risk (safe | platform | unverified; see fvnet). `get`
+refuses an unverified asset unless the project opted in. `search` writes assets/_candidates/<kind>-<slug>.json
 plus small preview images; `get` downloads full files into
 assets/<kind>/<provider>-<id>.<ext> and logs assets/credits.json.
 """
@@ -37,22 +44,30 @@ from fvnet import add_credit, credits_text, norm_license
 KINDS = ("photo", "video", "audio", "sfx", "music")
 DEFAULT_PROVIDERS = {
     "photo": ["pexels", "pixabay", "openverse", "wikimedia", "nasa"],
-    "video": ["pexels", "pixabay", "nasa"],
-    "audio": ["openverse"],
+    "video": ["pexels", "pixabay", "nasa", "wikimedia", "archive"],
+    "audio": ["openverse", "wikimedia", "archive"],
     "music": ["openverse"],
-    "sfx": ["freesound", "openverse"],
+    "sfx": ["freesound", "openverse", "wikimedia"],
 }
+# download caps per kind (bytes) and the content types a download may have
+MAX_BYTES = {"photo": 40 << 20, "meme": 40 << 20, "icon": 1 << 20, "video": 400 << 20, "audio": 80 << 20, "music": 80 << 20, "sfx": 40 << 20}
+_BIN = ("application/ogg", "application/octet-stream", "binary/octet-stream")
+CTYPES = {"photo": ("image/",) + _BIN, "meme": ("image/", "video/") + _BIN, "icon": ("image/",) + _BIN, "video": ("video/",) + _BIN,
+          "audio": ("audio/",) + _BIN, "music": ("audio/",) + _BIN, "sfx": ("audio/",) + _BIN}
 REMBG_MODELS = ("isnet-general-use", "birefnet-general-lite", "birefnet-general", "u2net", "u2netp", "silueta", "isnet-anime", "birefnet-portrait")
 KEY_NAMES = {"pexels": "PEXELS_API_KEY", "pixabay": "PIXABAY_API_KEY", "freesound": "FREESOUND_API_KEY"}
 
 
 def _rec(provider, pid, kind, title, url, download_url, preview_url, width=None, height=None, duration=None, author="", author_url="",
-         lic="", lic_url="", attribution=None, **extra) -> dict:
+         lic="", lic_url="", attribution=None, risk=None, **extra) -> dict:
     n = norm_license(lic, lic_url)
-    r = {"id": f"{provider}-{pid}", "provider": provider, "kind": kind, "title": (title or "").strip()[:140], "url": url,
+    ok = n["ok"] or attribution is False
+    if risk is None:
+        risk = "safe" if ok else "unverified"
+    r = {"id": f"{provider}-{fvnet.safe_name(pid)}", "provider": provider, "kind": kind, "title": (title or "").strip()[:140], "url": url,
          "download_url": download_url, "preview_url": preview_url, "width": width, "height": height, "duration": duration,
          "author": author or "", "author_url": author_url or "", "license": n["label"] if n["ok"] else lic, "license_url": n["url"] or lic_url,
-         "attribution_required": n["attribution"] if attribution is None else attribution, "_ok": n["ok"] or attribution is False}
+         "attribution_required": n["attribution"] if attribution is None else attribution, "risk": risk, "_ok": ok}
     r.update(extra)
     return r
 
@@ -106,10 +121,18 @@ def _pixabay(q, kind, n):
 def _openverse(q, kind, n):
     audio = kind in ("audio", "music", "sfx")
     ep = "audio" if audio else "images"
-    d = fvnet.fetch_json(f"https://api.openverse.org/v1/{ep}/", {"q": q, "page_size": min(n * 2, 40), "license": "cc0,pdm,by,by-sa",
-                                                                  "category": "sound_effect" if kind == "sfx" else None})
+    # anonymous requests may ask for at most 20 results: more is answered with HTTP 401
+    args = {"q": q, "page_size": min(n * 2, 20), "license": "cc0,pdm,by,by-sa", "category": "sound_effect" if kind == "sfx" else None}
+    d = fvnet.fetch_json(f"https://api.openverse.org/v1/{ep}/", args)
+    short_only = False
+    if kind == "sfx" and not d.get("results"):
+        # few sounds carry the sound_effect category: search all audio and keep the short ones
+        d = fvnet.fetch_json(f"https://api.openverse.org/v1/{ep}/", dict(args, category=None))
+        short_only = True
     out = []
     for r in d.get("results", []):
+        if short_only and (r.get("duration") or 0) > 30000:
+            continue
         lic = (r.get("license") or "").lower()
         if lic not in ("cc0", "pdm", "by", "by-sa"):
             continue
@@ -122,15 +145,23 @@ def _openverse(q, kind, n):
     return out
 
 
-def _wikimedia(q, kind, n):
+def _wikimedia(q, kind, n, **opts):
+    """Wikimedia Commons. Photos, and with filetype search also video and audio (a small transcode is preferred for big films)."""
+    av = kind != "photo"
+    want = "VIDEO" if kind == "video" else "AUDIO"
     d = fvnet.fetch_json("https://commons.wikimedia.org/w/api.php", {
-        "action": "query", "format": "json", "generator": "search", "gsrnamespace": 6, "gsrsearch": q, "gsrlimit": min(n * 2, 30),
-        "prop": "imageinfo", "iiprop": "url|extmetadata|size|mime", "iiurlwidth": 640})
+        "action": "query", "format": "json", "generator": "search", "gsrnamespace": 6, "gsrlimit": min(n * 2, 30),
+        "gsrsearch": f"{q} filetype:{'video' if kind == 'video' else 'audio'}" if av else q,
+        "prop": "videoinfo" if av else "imageinfo", ("viprop" if av else "iiprop"): "url|extmetadata|size|mime|mediatype" + ("|derivatives" if av else ""),
+        **({} if av else {"iiurlwidth": 640})})
     out = []
     for pg in sorted((d.get("query", {}).get("pages") or {}).values(), key=lambda p: p.get("index", 0)):
-        ii = (pg.get("imageinfo") or [{}])[0]
+        ii = ((pg.get("videoinfo") if av else pg.get("imageinfo")) or [{}])[0]
         mime = ii.get("mime", "")
-        if not (mime.startswith("image/") and mime not in ("image/svg+xml", "image/tiff")):
+        if av:
+            if ii.get("mediatype") != want:
+                continue
+        elif not (mime.startswith("image/") and mime not in ("image/svg+xml", "image/tiff")):
             continue
         md = ii.get("extmetadata", {})
         short = (md.get("LicenseShortName") or {}).get("value", "")
@@ -140,12 +171,71 @@ def _wikimedia(q, kind, n):
         nl = norm_license(short, lurl)
         if not nl["ok"]:
             continue
-        out.append(_rec("wikimedia", pg["pageid"], "photo", _strip((md.get("ObjectName") or {}).get("value", "")) or pg["title"].replace("File:", ""),
-                        ii.get("descriptionurl"), ii.get("url"), ii.get("thumburl"), ii.get("width"), ii.get("height"), None,
-                        _strip((md.get("Artist") or {}).get("value", "")), "", short, lurl))
+        year = _year((md.get("DateTimeOriginal") or {}).get("value", ""))
+        if opts.get("before") and not (year and year < int(opts["before"])):
+            continue
+        url, extra = ii.get("url"), {}
+        if kind == "video":
+            # the original can be hundreds of MB: take the largest WebM transcode up to 720p when there is one
+            ders = [x for x in ii.get("derivatives") or [] if "webm" in str(x.get("type")) and (x.get("height") or 0) <= 720]
+            if ders and (ii.get("size") or 0) > (60 << 20):
+                url = max(ders, key=lambda x: x.get("height") or 0)["src"]
+            extra = {"year": year}
+        out.append(_rec("wikimedia", pg["pageid"], kind, _strip((md.get("ObjectName") or {}).get("value", "")) or pg["title"].replace("File:", ""),
+                        ii.get("descriptionurl"), url, ii.get("thumburl"), ii.get("width"), ii.get("height"), ii.get("duration") if av else None,
+                        _strip((md.get("Artist") or {}).get("value", "")), "", short, lurl, **extra))
         if len(out) >= n:
             break
     return out
+
+
+def _year(text: str) -> int | None:
+    m = re.search(r"(1[89]\d\d|20\d\d)", _strip(text))
+    return int(m.group(1)) if m else None
+
+
+def _archive(q, kind, n, **opts):
+    """Internet Archive. Items that state a licence are kept as usual; items with none are `unverified`."""
+    mt = "movies" if kind == "video" else "audio"
+    query = f"({q}) AND mediatype:{mt}"
+    if opts.get("before"):
+        query += f" AND year:[1880 TO {int(opts['before']) - 1}]"
+    if opts.get("lang"):
+        query += f" AND language:({opts['lang']})"
+    d = fvnet.fetch_json("https://archive.org/advancedsearch.php", {"q": query, "fl[]": ["identifier", "title", "year", "licenseurl", "creator", "downloads"],
+                                                                    "sort[]": "downloads desc", "rows": min(n * 2, 50), "output": "json"})
+    out = []
+    for it in d.get("response", {}).get("docs", []):
+        ident = str(it.get("identifier") or "")
+        if not ident:
+            continue
+        lurl = str(it.get("licenseurl") or "")
+        creator = it.get("creator")
+        rec = _rec("archive", ident, kind, it.get("title") or ident, f"https://archive.org/details/{urllib.parse.quote(ident)}", None, None, None, None, None,
+                   ", ".join(creator) if isinstance(creator, list) else creator or "", "", lurl or "no licence stated", lurl,
+                   risk=None if lurl else "unverified", year=_year(str(it.get("year") or "")), identifier=ident)
+        if lurl and not rec["_ok"]:
+            continue            # states a licence, and it is NC / ND / unknown
+        rec["_ok"] = True
+        out.append(rec)
+        if len(out) >= n:
+            break
+    return out
+
+
+def _archive_resolve(r: dict) -> str | None:
+    """The smallest web-friendly file of an Internet Archive item."""
+    ident = r.get("identifier") or r["id"].split("-", 1)[1]
+    files = fvnet.fetch_json(f"https://archive.org/metadata/{urllib.parse.quote(ident)}").get("files") or []
+    if r["kind"] == "video":
+        order = [("h.264", ".mp4"), ("512kb mpeg4", ".mp4"), ("mpeg4", ".mp4"), ("ogg video", ".ogv")]
+    else:
+        order = [("vbr mp3", ".mp3"), ("mp3", ".mp3"), ("ogg vorbis", ".ogg"), ("flac", ".flac"), ("wave", ".wav")]
+    for fmt, ext in order:
+        hit = sorted((f for f in files if fmt in str(f.get("format", "")).lower() and str(f.get("name", "")).lower().endswith(ext)), key=lambda f: int(f.get("size") or 0))
+        if hit:
+            return f"https://archive.org/download/{urllib.parse.quote(ident)}/{urllib.parse.quote(hit[0]['name'])}"
+    return None
 
 
 def _nasa(q, kind, n):
@@ -176,12 +266,17 @@ def _freesound(q, kind, n):
 
 
 PROVIDERS = {"pexels": (_pexels, ("photo", "video")), "pixabay": (_pixabay, ("photo", "video")), "openverse": (_openverse, ("photo", "audio", "music", "sfx")),
-             "wikimedia": (_wikimedia, ("photo",)), "nasa": (_nasa, ("photo", "video")), "freesound": (_freesound, ("sfx",))}
+             "wikimedia": (_wikimedia, ("photo", "video", "audio", "music", "sfx")), "nasa": (_nasa, ("photo", "video")), "freesound": (_freesound, ("sfx",)),
+             "archive": (_archive, ("video", "audio", "music", "sfx"))}
+TAKES_OPTS = {"wikimedia", "archive"}       # providers that understand before= (a year) and lang=
 
 
 # ------------------------------------------------------------------ search / get
-def search_providers(q: str, kind: str, providers=None, n: int = 12) -> list[dict]:
-    """Query providers (no disk writes). Drops NC/ND/unknown licences. Soft-fails per provider."""
+def search_providers(q: str, kind: str, providers=None, n: int = 12, unverified: bool = False, **opts) -> list[dict]:
+    """Query providers (no disk writes). Drops NC/ND/unknown licences. Soft-fails per provider.
+
+    unverified=True also returns results that state no licence at all (risk `unverified`); `get` still gates them.
+    opts (before=<year>, lang=<code>) go to the providers that understand them."""
     if kind not in KINDS:
         raise FishError(f"kind must be one of {', '.join(KINDS)}")
     res: list[dict] = []
@@ -193,7 +288,7 @@ def search_providers(q: str, kind: str, providers=None, n: int = 12) -> list[dic
         if kind not in kinds:
             continue
         try:
-            got = fn(q, kind, n)
+            got = fn(q, kind, n, **opts) if name in TAKES_OPTS else fn(q, kind, n)
         except fvnet.NetError as e:
             warn(f"{name}: {e}")
             continue
@@ -203,7 +298,7 @@ def search_providers(q: str, kind: str, providers=None, n: int = 12) -> list[dic
         except (KeyError, TypeError, ValueError) as e:
             warn(f"{name}: unexpected response ({e})")
             continue
-        res += [r for r in got if r.get("_ok")]
+        res += [r for r in got if r.get("_ok") and (unverified or fvnet.risk_of(r) != "unverified")]
     for r in res:
         r.pop("_ok", None)
     return res
@@ -214,10 +309,14 @@ def _ext(url: str, default: str) -> str:
     return e if re.fullmatch(r"\.[a-z0-9]{2,4}", e or "") else default
 
 
-def search(project, q: str, kind: str = "photo", providers=None, n: int = 12) -> list[dict]:
-    """Search, write assets/_candidates/<kind>-<slug>.json and download small previews next to it."""
+def search(project, q: str, kind: str = "photo", providers=None, n: int = 12, unverified: bool | None = None, **opts) -> list[dict]:
+    """Search, write assets/_candidates/<kind>-<slug>.json and download small previews next to it.
+
+    unverified defaults to the project's choice: only a `memes.policy: viral` project sees results with no licence."""
     project = ensure_project(project)
-    res = search_providers(q, kind, providers, n)
+    if unverified is None:
+        unverified = fvnet.memes_policy(project) == "viral"
+    res = search_providers(q, kind, providers, n, unverified, **opts)
     cdir = project / "assets" / "_candidates"
     cdir.mkdir(parents=True, exist_ok=True)
     for r in res:
@@ -230,7 +329,7 @@ def search(project, q: str, kind: str = "photo", providers=None, n: int = 12) ->
             continue  # audio previews are full tracks; skip bulky pre-download
         try:
             if not dest.exists():
-                fvnet.download_file(pu, dest, timeout=20)
+                fvnet.download_file(pu, dest, timeout=20, max_bytes=20 << 20)
             r["preview_file"] = dest.name
         except fvnet.NetError as e:
             warn(f"preview skipped for {r['id']}: {e}")
@@ -238,7 +337,8 @@ def search(project, q: str, kind: str = "photo", providers=None, n: int = 12) ->
     save_json(out, {"query": q, "kind": kind, "results": res})
     log(f"{len(res)} candidates -> {out}")
     for r in res:
-        log(f"  {r['id']:<28} {r['license']:<14} {(r['title'] or '')[:50]}  by {r['author'][:24]}")
+        tag = "" if fvnet.risk_of(r) == "safe" else f"  [{fvnet.risk_of(r).upper()}]"
+        log(f"  {r['id']:<28} {str(r['license'])[:14]:<14} {(r['title'] or '')[:50]}  by {r['author'][:24]}{tag}")
     return res
 
 
@@ -267,8 +367,10 @@ def _nasa_resolve(r: dict) -> str | None:
     return None
 
 
-def get(project, candidate_ids) -> list[Path]:
-    """Download candidates fully into assets/<kind>/<provider>-<id>.<ext> and log credits (deduped)."""
+def get(project, candidate_ids, accept_risk: bool = False) -> list[Path]:
+    """Download candidates fully into assets/<kind>/<provider>-<id>.<ext> and log credits (deduped).
+
+    An asset whose licence is not verified is refused unless the project opted in (memes.policy: viral) or accept_risk is set."""
     project = ensure_project(project)
     ids = [candidate_ids] if isinstance(candidate_ids, str) else list(candidate_ids)
     cands = _find_candidates(project, ids)
@@ -279,21 +381,25 @@ def get(project, candidate_ids) -> list[Path]:
             warn(f"{cid}: not in assets/_candidates (run `assets.py search` first)")
             continue
         try:
+            fvnet.check_risk(project, r, accept_risk)
             url = r.get("download_url")
             if not url and r["provider"] == "nasa":
                 url = _nasa_resolve(r)
+            if not url and r["provider"] == "archive":
+                url = _archive_resolve(r)
             if not url:
                 raise FishError("no download URL")
-            dflt = {"photo": ".jpg", "video": ".mp4"}.get(r["kind"], ".mp3")
+            kind = fvnet.safe_name(r["kind"])
+            dflt = {"photo": ".jpg", "meme": ".jpg", "icon": ".svg", "video": ".mp4"}.get(kind, ".mp3")
             if r["provider"] == "openverse" and r.get("filetype"):
-                dflt = "." + str(r["filetype"]).lower()
-            dest = project / "assets" / r["kind"] / f"{r['id']}{_ext(url, dflt)}"
+                dflt = "." + fvnet.safe_name(str(r["filetype"]).lower(), 5)
+            dest = project / "assets" / kind / f"{fvnet.safe_name(r['id'])}{_ext(url, dflt)}"
             if not dest.exists():
-                fvnet.download_file(url, dest, timeout=120)
+                fvnet.download_file(url, dest, timeout=120, max_bytes=MAX_BYTES.get(kind, 80 << 20), types=CTYPES.get(kind))
         except FishError as e:
             warn(f"{cid}: {e}")
             continue
-        rec = {k: v for k, v in r.items() if k not in ("preview_file", "collection_url", "filetype")}
+        rec = {k: v for k, v in r.items() if k not in ("preview_file", "collection_url", "filetype", "identifier")}
         rec["file"] = str(dest.relative_to(project)).replace("\\", "/")
         rec["credit"] = fvnet.credit_line(rec)
         added = add_credit(project, rec)
@@ -342,11 +448,27 @@ GRADES = {
 }
 
 
-def clip_filters(fps: int, width: int, grade: str | None = None, sharpen: bool = False, lut: str | Path | None = None) -> str:
-    """The ffmpeg -vf chain of prep_clip: [light denoise] -> fps -> scale -> [sharpen] -> [grade] -> [.cube LUT]."""
+ASPECTS = {"16:9": 16 / 9, "9:16": 9 / 16, "1:1": 1.0, "4:5": 4 / 5}
+
+
+def crop_filter(aspect: str, focus: tuple[float, float] | None = None) -> str:
+    """An ffmpeg crop to an aspect ratio, as large as fits, centred on focus (fractions of the frame; default the centre)."""
+    if aspect not in ASPECTS:
+        raise FishError(f"unknown aspect '{aspect}': one of {sorted(ASPECTS)}")
+    a = ASPECTS[aspect]
+    fx, fy = (min(1.0, max(0.0, float(v))) for v in (focus or (0.5, 0.5)))
+    w, h = f"min(iw\\,ih*{a:.6f})", f"min(ih\\,iw/{a:.6f})"
+    return f"crop={w}:{h}:(iw-{w})*{fx:.4f}:(ih-{h})*{fy:.4f}"
+
+
+def clip_filters(fps: int, width: int, grade: str | None = None, sharpen: bool = False, lut: str | Path | None = None,
+                 aspect: str | None = None, focus: tuple[float, float] | None = None) -> str:
+    """The ffmpeg -vf chain of prep_clip: [crop] -> [light denoise] -> fps -> scale -> [sharpen] -> [grade] -> [.cube LUT]."""
     if grade and grade not in GRADES:
         raise FishError(f"unknown grade '{grade}': one of {sorted(GRADES)}")
     parts = []
+    if aspect:
+        parts.append(crop_filter(aspect, focus))
     if sharpen:
         parts.append("hqdn3d=1.5:1.5:3:3")
     parts += [f"fps={fps}", f"scale='min({width},iw)':-2:flags=lanczos"]
@@ -365,24 +487,29 @@ def clip_filters(fps: int, width: int, grade: str | None = None, sharpen: bool =
 
 
 def prep_clip(project, src, clip_id: str, start: float = 0, dur: float | None = None, fps: int = 30, width: int = 1080,
-              grade: str | None = None, sharpen: bool = False, lut: str | Path | None = None) -> dict:
+              grade: str | None = None, sharpen: bool = False, lut: str | Path | None = None,
+              aspect: str | None = None, focus: tuple[float, float] | None = None) -> dict:
     """Extract frames to build/clips/<clip_id>/f_%05d.jpg + meta.json {frames,fps,W,H,src}.
 
     grade   warm | cool | teal-orange | bw  (ffmpeg eq/colorbalance/curves, no LUT files)
     sharpen light hqdn3d first, then lanczos scale + unsharp=5:5:0.8 (soft stock footage)
     lut     path to a .cube file, applied last with lut3d
+    aspect  16:9 | 9:16 | 1:1 | 4:5: crop to that shape first (focus = the point to keep, fractions of the frame)
+    The sound is always dropped: a clip is pictures only.
     """
     project = ensure_project(project)
     src = Path(src)
     if not src.exists():
         raise FishError(f"missing file: {src}")
+    if fvnet.safe_name(clip_id) != clip_id:
+        raise FishError(f"clip id '{clip_id}' must use only letters, digits, dot, dash and underscore")
     out = project / "build" / "clips" / clip_id
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True, exist_ok=True)
     cmd = [ffmpeg_bin(), "-hide_banner", "-loglevel", "error", "-y", "-ss", str(start)]
     if dur:
         cmd += ["-t", str(dur)]
-    cmd += ["-i", str(src), "-an", "-vf", clip_filters(fps, width, grade, sharpen, lut), "-q:v", "3", str(out / "f_%05d.jpg")]
+    cmd += ["-i", str(src), "-an", "-vf", clip_filters(fps, width, grade, sharpen, lut, aspect, focus), "-q:v", "3", str(out / "f_%05d.jpg")]
     run(cmd)
     frames = sorted(out.glob("f_*.jpg"))
     if not frames:
@@ -391,11 +518,38 @@ def prep_clip(project, src, clip_id: str, start: float = 0, dur: float | None = 
     with Image.open(frames[0]) as im:
         W, H = im.size
     meta = {"frames": len(frames), "fps": fps, "W": W, "H": H, "src": str(src)}
-    if grade or sharpen or lut:
-        meta["look"] = {k: v for k, v in {"grade": grade, "sharpen": sharpen or None, "lut": str(lut) if lut else None}.items() if v}
+    if grade or sharpen or lut or aspect:
+        meta["look"] = {k: v for k, v in {"grade": grade, "sharpen": sharpen or None, "lut": str(lut) if lut else None, "aspect": aspect}.items() if v}
     save_json(out / "meta.json", meta)
     log(f"{len(frames)} frames ({W}x{H} @ {fps}) -> {out}")
     return meta
+
+
+# ------------------------------------------------------------------ website stills
+def shot(project, urls, width: int = 1440, height: int = 900, dpr: float = 2, full: bool = False, wait: float = 2.5, keep_banners: bool = False) -> list[Path]:
+    """Read-only stills of web pages into assets/shots/, with cookie banners hidden. Each one is logged as a
+    `platform` asset: a screenshot shows someone else's site, under that site's terms."""
+    project = ensure_project(project)
+    urls = [fvnet.http_only(u) for u in ([urls] if isinstance(urls, str) else urls)]
+    from fvcore import browser_bin, last_json_line, node
+    if not browser_bin():
+        raise FishError("a screenshot needs Chromium/Brave/Chrome: set BROWSER=/path")
+    args = ["--width", width, "--height", height, "--dpr", dpr, "--wait", wait] + (["--full"] if full else []) + (["--keep-banners"] if keep_banners else [])
+    r = node("shot.mjs", project, *urls, *args, capture=True)
+    rep = last_json_line(r.stdout) or {}
+    out = []
+    for it in rep.get("shots", []):
+        if it.get("error"):
+            warn(f"{it['url']}: {it['error']}")
+            continue
+        rel = str(Path(it["file"]).resolve().relative_to(project.resolve())).replace("\\", "/")
+        host = urllib.parse.urlsplit(it["url"]).netloc
+        add_credit(project, {"id": f"screenshot-{Path(it['file']).stem}", "provider": "screenshot", "kind": "photo", "title": (it.get("title") or host)[:140],
+                             "url": it["url"], "author": host, "license": "Screenshot of a third-party website (no open licence)", "license_url": "",
+                             "attribution_required": False, "risk": "platform", "file": rel, "hidden_banners": it.get("hidden", 0)})
+        log(f"shot {it['url']} -> {rel}" + (f"  ({it['hidden']} banner element(s) hidden)" if it.get("hidden") else ""))
+        out.append(Path(it["file"]))
+    return out
 
 
 # ------------------------------------------------------------------ Kenney SFX pack
@@ -421,7 +575,8 @@ AUDIO_EXT = (".ogg", ".wav", ".mp3")
 
 def build_sfx_index(lib: Path) -> dict:
     """Map our cue types to candidate files (paths relative to lib) by filename keywords."""
-    files = sorted(p for p in lib.rglob("*") if p.suffix.lower() in AUDIO_EXT)
+    packs = [d for d in lib.iterdir() if d.is_dir() and (d / "pack.json").exists()]  # committed packs carry their own index
+    files = sorted(p for p in lib.rglob("*") if p.suffix.lower() in AUDIO_EXT and not any(d in p.parents for d in packs))
     idx: dict[str, list[str]] = {}
     for cue, kws in CUE_KEYWORDS.items():
         hit = []
@@ -475,22 +630,44 @@ def cli(argv=None) -> int:
     sp = ap.add_subparsers(dest="cmd", required=True)
     a = sp.add_parser("search"); a.add_argument("project"); a.add_argument("q"); a.add_argument("--kind", default="photo", choices=KINDS)
     a.add_argument("--providers"); a.add_argument("-n", type=int, default=12)
+    a.add_argument("--before", type=int, help="only works from before this year (wikimedia, archive)"); a.add_argument("--lang", help="language code (archive)")
+    a.add_argument("--unverified", action="store_true", help="also list results that state no licence (they stay gated in `get`)")
     a = sp.add_parser("get"); a.add_argument("project"); a.add_argument("ids", nargs="+")
+    a.add_argument("--accept-risk", action="store_true", help="download an asset whose licence is not verified")
+    a = sp.add_parser("shot"); a.add_argument("project"); a.add_argument("urls", nargs="+"); a.add_argument("--width", type=int, default=1440)
+    a.add_argument("--height", type=int, default=900); a.add_argument("--dpr", type=float, default=2); a.add_argument("--full", action="store_true")
+    a.add_argument("--wait", type=float, default=2.5); a.add_argument("--keep-banners", action="store_true")
+    a = sp.add_parser("logo"); a.add_argument("project"); a.add_argument("brand"); a.add_argument("--color", default="brand")
+    a = sp.add_parser("icon"); a.add_argument("project"); a.add_argument("q"); a.add_argument("--color"); a.add_argument("-n", type=int, default=12)
+    a = sp.add_parser("emoji"); a.add_argument("project"); a.add_argument("emoji"); a.add_argument("--set", dest="eset", default="openmoji", choices=["openmoji", "twemoji"])
     a = sp.add_parser("cutout"); a.add_argument("src"); a.add_argument("dst"); a.add_argument("--model", default="isnet-general-use")
     a = sp.add_parser("clip"); a.add_argument("project"); a.add_argument("src"); a.add_argument("clip_id")
     a.add_argument("--start", type=float, default=0); a.add_argument("--dur", type=float); a.add_argument("--fps", type=int, default=30); a.add_argument("--width", type=int, default=1080)
     a.add_argument("--grade", choices=sorted(GRADES)); a.add_argument("--sharpen", action="store_true"); a.add_argument("--lut", help=".cube file")
+    a.add_argument("--aspect", choices=sorted(ASPECTS)); a.add_argument("--focus", help="x,y fractions of the frame to keep when cropping")
     a = sp.add_parser("sfx-pack"); a.add_argument("dest", nargs="?")
     a = sp.add_parser("credits"); a.add_argument("project")
     ns = ap.parse_args(argv)
     if ns.cmd == "search":
-        search(ns.project, ns.q, ns.kind, ns.providers.split(",") if ns.providers else None, ns.n)
+        opts = {k: v for k, v in (("before", ns.before), ("lang", ns.lang)) if v}
+        search(ns.project, ns.q, ns.kind, ns.providers.split(",") if ns.providers else None, ns.n, True if ns.unverified else None, **opts)
     elif ns.cmd == "get":
-        get(ns.project, ns.ids)
+        return 0 if len(get(ns.project, ns.ids, ns.accept_risk)) == len(ns.ids) else 1
+    elif ns.cmd == "shot":
+        return 0 if shot(ns.project, ns.urls, ns.width, ns.height, ns.dpr, ns.full, ns.wait, ns.keep_banners) else 1
+    elif ns.cmd in ("logo", "icon", "emoji"):
+        import icons
+        if ns.cmd == "logo":
+            icons.logo(ns.project, ns.brand, ns.color)
+        elif ns.cmd == "icon":
+            icons.icon(ns.project, ns.q, ns.color, ns.n)
+        else:
+            icons.emoji(ns.project, ns.emoji, ns.eset)
     elif ns.cmd == "cutout":
         return 0 if cutout(ns.src, ns.dst, ns.model) else 1
     elif ns.cmd == "clip":
-        prep_clip(ns.project, ns.src, ns.clip_id, ns.start, ns.dur, ns.fps, ns.width, ns.grade, ns.sharpen, ns.lut)
+        focus = tuple(float(v) for v in ns.focus.split(",")) if ns.focus else None
+        prep_clip(ns.project, ns.src, ns.clip_id, ns.start, ns.dur, ns.fps, ns.width, ns.grade, ns.sharpen, ns.lut, ns.aspect, focus)
     elif ns.cmd == "sfx-pack":
         sfx_pack(ns.dest)
     elif ns.cmd == "credits":

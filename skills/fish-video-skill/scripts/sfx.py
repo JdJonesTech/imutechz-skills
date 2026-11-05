@@ -45,6 +45,11 @@ def library(project: Path) -> dict[str, list[Path]]:
             files = [x.get("file") or x.get("path") if isinstance(x, dict) else x for x in files]
             fs = [Path(f) if Path(f).is_absolute() else idx.parent / f for f in files]
             lib[t] = [f for f in fs if f.exists()]
+    for pj in sorted((SKILL / "sfx" / "library").glob("*/pack.json")):  # committed packs (cue type -> files)
+        for t, files in ((load_json(pj) or {}).get("cues") or {}).items():
+            fs = [pj.parent / f for f in files if (pj.parent / f).is_file()]
+            if fs:
+                lib[t] = fs
     own = project / "assets" / "sfx"
     if own.exists():
         for d in own.iterdir():
@@ -53,6 +58,20 @@ def library(project: Path) -> dict[str, list[Path]]:
                 if fs:
                     lib[d.name] = fs  # the project's own files override the library
     return {k: v for k, v in lib.items() if v}
+
+
+def levels(project: Path) -> dict[str, float]:
+    """Cue levels in dBFS. Lowest to highest precedence: built-in table, sfx/library/*/pack.json,
+    <project>/assets/sfx/pack.json (written by `sounds add`), brief.mix.sfx_levels."""
+    lv: dict[str, float] = dict(LEVEL_DB)
+    for pj in sorted((SKILL / "sfx" / "library").glob("*/pack.json")):
+        lv.update({k: float(v) for k, v in ((load_json(pj) or {}).get("levels") or {}).items()})
+    pj = Path(project) / "assets" / "sfx" / "pack.json"
+    if pj.exists():
+        lv.update({k: float(v) for k, v in ((load_json(pj) or {}).get("levels") or {}).items()})
+    if (Path(project) / "brief.yaml").exists():
+        lv.update({k: float(v) for k, v in (load_brief_mix(Path(project)).get("sfx_levels") or {}).items()})
+    return lv
 
 
 def load_brief_mix(project: Path) -> dict:
@@ -79,7 +98,7 @@ def build(project: Path, platform: str) -> dict:
     density = (tl.get("sfx") or {}).get("density") or "rich"
     lib = library(project)
     # per-project levels for any cue type, including custom ones: brief.mix.sfx_levels: {trombone: -14}
-    levels = {**LEVEL_DB, **((load_brief_mix(project)).get("sfx_levels") or {})}
+    lv = levels(project)
     covered = sorted(lib)
     save_json(b / "sfx-covered.json", covered)
     if not lib:
@@ -104,7 +123,7 @@ def build(project: Path, platform: str) -> dict:
         a = cache[f]
         if typ == "typing" and q.get("len"):
             a = a[: int(q["len"] * SR)]
-        g = 10 ** (float(levels.get(typ, -22)) / 20)
+        g = 10 ** (float(lv.get(typ, -22)) / 20)
         start = t - len(a) / SR if typ == "riser" else t - PRE.get(typ, 0.0)
         i0 = max(0, int(start * SR))
         seg = a[: max(0, min(len(a), n - i0))]

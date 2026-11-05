@@ -25,7 +25,9 @@
   Research, YouTube, trends, assets, screen recording, analysis:
     fishvideo yt <search|info|subs|download|clip|suggest> ...
     fishvideo trends <dir> --topic "..." [--region IN] [--days 30]
-    fishvideo assets <search|get|cutout|clip|sfx-pack|credits> ...
+    fishvideo assets <search|get|cutout|clip|shot|logo|icon|emoji|sfx-pack|credits> ...
+    fishvideo memes <templates|trending|films|add|sheet|cut|caption|lint|sources> ...   memes, reaction clips, captions (see references/memes-and-real-assets.md)
+    fishvideo sounds <synth|add|audition|search|list> ...   cue sounds: synthesise, import, audition
     fishvideo screenrec <record|import> <dir> <shot> ...
     fishvideo dissect <video> --out <dir> [--fps 4] [--vtt subs.vtt]
     fishvideo sfx <dir> --platform shorts      place sample SFX (normally inside render)
@@ -59,7 +61,7 @@ import voice as voicemod
 import interview as ivmod
 
 PASSTHRU = {"yt": "youtube", "trends": "trends", "assets": "assets", "screenrec": "screenrec", "dissect": "dissect", "sfx": "sfx", "clean": "clean",
-            "review": "review", "voiceover": "voiceover", "beats": "beats"}
+            "review": "review", "voiceover": "voiceover", "beats": "beats", "memes": "memes", "sounds": "sounds"}
 
 
 def passthru(cmd: str, argv: list[str]) -> int:

@@ -27,6 +27,7 @@ import time
 from pathlib import Path
 
 from fvcore import SKILL, FishError, ensure_project, load_json, log, main_guard, mmss, node, project_config, slugify
+import fvnet
 import storyboard as sbmod
 
 
@@ -73,11 +74,22 @@ def credits_text(project: Path, voice: dict, music_note: str) -> str:
     items = load_json(cf, default=[]) if cf.exists() else []
     if isinstance(items, dict):
         items = items.get("items") or list(items.values())
+    held: dict[str, list[str]] = {"platform": [], "unverified": []}
     for it in items:
         if not isinstance(it, dict):
             continue
         att = it.get("attribution") or f"\"{it.get('title') or it.get('id')}\" by {it.get('author') or 'unknown'} ({it.get('provider')})"
-        lines.append(f"- {att}, licence: {it.get('license')}" + (f" {it.get('license_url')}" if it.get("license_url") else "") + (f" {it.get('url')}" if it.get("url") else ""))
+        line = f"- {att}, licence: {it.get('license')}" + (f" {it.get('license_url')}" if it.get("license_url") else "") + (f" {it.get('url')}" if it.get("url") else "")
+        tier = fvnet.risk_of(it)
+        if tier == "safe":
+            if line not in lines:
+                lines.append(line)
+        elif line not in held[tier]:
+            held[tier].append(line)
+    for tier, head in (("platform", "Shown under the source's own terms (no open licence):"),
+                       ("unverified", "LICENCE NOT VERIFIED (review before publishing; these can be claimed, muted or taken down):")):
+        if held[tier]:
+            lines += ["", head] + held[tier] + [""]
     lines.append(f"- Music: {music_note}")
     prov = voice.get("provider")
     if prov and prov != "none":
