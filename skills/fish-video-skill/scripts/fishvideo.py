@@ -218,7 +218,8 @@ def cmd_doctor(keys: bool = False) -> int:
             ("PEXELS_API_KEY", "stock photos + video", "pexels.com/api (free, instant)", "Openverse / Wikimedia / NASA (key-less)"),
             ("PIXABAY_API_KEY", "stock photos + video", "pixabay.com/api/docs (free, log in to see the key)", "Pexels or key-less sources"),
             ("FREESOUND_API_KEY", "CC0 sound effects", "freesound.org/apiv2/apply (free)", "Kenney CC0 packs + synth SFX"),
-            ("YOUTUBE_API_KEY", "trending charts, fast search", "console.cloud.google.com > YouTube Data API v3 > Credentials (free quota)", "yt-dlp search (key-less)")]
+            ("YOUTUBE_API_KEY", "trending charts, fast search", "console.cloud.google.com > YouTube Data API v3 > Credentials (free quota)", "yt-dlp search (key-less)"),
+            ("IMGFLIP_API_KEY", "full meme-template search (paid plan)", "imgflip.com/api", "the free top-templates list")]
     for k, what, how, fb in KEYS:
         have = bool(secret(k))
         log(f"  {'ok  ' if have else 'info'}  {k:<20} {'present' if have else 'missing'}" + ("" if have or not keys else f": {what}. Get it: {how}. Without it: {fb}"))
