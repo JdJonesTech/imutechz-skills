@@ -369,6 +369,8 @@ def run_worker(py: Path | str, job: dict, logfile: Path | None = None) -> dict:
     res = last_json_line(r.stdout)
     if not res or not res.get("ok"):
         detail = (res or {}).get("error") or (r.stderr or "").strip()[-600:] or f"exit code {r.returncode}"
+        if "espeak-ng-data" in (r.stderr or ""):        # espeak-ng keeps its data path in a 230-character buffer
+            detail += " (the engine environment's path is probably too long for espeak-ng: use a shorter FISH_TTS_HOME)"
         raise FishError(f"voice engine job '{job.get('op')}' failed: {detail}")
     return res
 
@@ -463,6 +465,8 @@ def setup(engine: str, home: Path | None = None, gpu: bool = False, dry_run: boo
         r = subprocess.run(c)
         if r.returncode != 0:
             raise FishError(f"setup failed ({r.returncode}): {' '.join(c[:6])} ...")
+    if len(str(dest)) > 150:
+        warn(f"{dest} is a long path: espeak-ng (Kokoro) fails on paths past about 230 characters. Set FISH_TTS_HOME to a shorter one if voices fail.")
     _PROBE.pop(str(py), None)
     mods = probe(py).get("modules", {})
     if not mods.get(engine):

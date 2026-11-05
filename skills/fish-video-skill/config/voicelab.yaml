@@ -12,7 +12,8 @@ engines:
     torch: ["torch==2.6.0", "torchaudio==2.6.0"]
   kokoro:                     # Apache-2.0 weights. Fast on a CPU. Preset voices. No emotion control.
     python: "3.12"
-    packages: ["kokoro==0.9.4", "misaki[en]==0.9.4", "soundfile", "faster-whisper==1.2.1"]
+    packages: ["kokoro==0.9.4", "misaki[en]==0.9.4", "soundfile", "faster-whisper==1.2.1",
+               "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"]   # misaki cannot fetch its spaCy model inside a uv venv
     torch: ["torch"]
 
 whisper_model: small.en       # word timings and the transcript check; "small" is used for other languages
@@ -33,47 +34,48 @@ paces:
   fast:    {wps: 3.3, cfg_weight: 0.42, speed: 1.12, pause_scale: 0.75}
 
 # exaggeration: Chatterbox emotion intensity for a plain sentence. pause: seconds between sentences.
-# air: allowed band for energy above 6 kHz relative to the whole signal, in dB (too high sounds hissy).
+# air: band for energy above 6 kHz relative to the whole speech signal, in dB. Measured on both engines the recipes gave -12 to -19 dB,
+# so these bands (observed range plus 4 dB) catch a broken chain or a drifting line. They cannot say that a voice sounds airy or hissy: listen.
 styles:
   airy:
     exaggeration: 0.42
     cfg_shift: -0.03
     pause: 0.47
-    air: [-30, -17]
+    air: [-24, -8]
     post: "highpass=f=75,equalizer=f=280:t=q:w=1.1:g=-2,equalizer=f=3200:t=q:w=1.4:g=0.8,aexciter=freq=6500:amount=0.5:blend=0:ceil=11500,highshelf=f=8000:g=1.5,deesser=i=0.35,acompressor=threshold=-20dB:ratio=1.8:attack=15:release=180:makeup=1.2,aecho=0.9:0.9:19|37:0.04|0.025"
   soft:
     exaggeration: 0.34
     cfg_shift: -0.03
     pause: 0.52
-    air: [-40, -22]
+    air: [-26, -9]
     post: "highpass=f=70,equalizer=f=260:t=q:w=1.1:g=-1.5,highshelf=f=9000:g=-1,acompressor=threshold=-22dB:ratio=1.6:attack=20:release=200:makeup=1"
   warm:
     exaggeration: 0.45
     pause: 0.42
-    air: [-40, -22]
+    air: [-26, -9]
     post: "highpass=f=70,lowshelf=f=170:g=1.5,equalizer=f=3000:t=q:w=1.4:g=0.6,acompressor=threshold=-21dB:ratio=1.8:attack=15:release=180:makeup=1"
   calm:
     exaggeration: 0.36
     pause: 0.55
-    air: [-40, -22]
+    air: [-26, -9]
     post: "highpass=f=75,equalizer=f=280:t=q:w=1.2:g=-2,acompressor=threshold=-21dB:ratio=1.7:attack=15:release=180:makeup=1"
   energetic:
     exaggeration: 0.62
     cfg_shift: 0.05
     pause: 0.3
-    air: [-36, -19]
+    air: [-24, -8]
     post: "highpass=f=85,equalizer=f=250:t=q:w=1.2:g=-2.5,equalizer=f=4500:t=q:w=1.3:g=1.5,highshelf=f=9000:g=1,acompressor=threshold=-22dB:ratio=2.5:attack=8:release=120:makeup=1.5"
   emotional:
     exaggeration: 0.68
     temperature: 0.9
     pause: 0.47
-    air: [-36, -19]
+    air: [-24, -8]
     post: "highpass=f=75,equalizer=f=280:t=q:w=1.1:g=-2,equalizer=f=3200:t=q:w=1.4:g=0.8,highshelf=f=8500:g=1,deesser=i=0.3,acompressor=threshold=-20dB:ratio=1.8:attack=15:release=180:makeup=1.2"
   cinematic:
     exaggeration: 0.48
     cfg_shift: -0.05
     pause: 0.62
-    air: [-42, -22]
+    air: [-26, -9]
     post: "highpass=f=60,lowshelf=f=140:g=2,equalizer=f=320:t=q:w=1.2:g=-2,equalizer=f=4200:t=q:w=1.4:g=1,acompressor=threshold=-21dB:ratio=2:attack=12:release=200:makeup=1.2,aecho=0.9:0.9:23|41:0.05|0.03"
 
 # How a sentence's punctuation and its scene's `mood:` move the emotion and the pause after it.
@@ -95,7 +97,7 @@ pace_control:
   min_words: 6               # shorter lines are too noisy to steer
   pause_range: [0.15, 0.9]
   max_stretch: 0.06
-  max_rounds: 1              # regenerations with a changed engine setting (slow on a CPU)
+  max_rounds: 2              # regenerations with a changed engine setting (slow on a CPU)
   cfg_per_wps: 0.28          # Chatterbox: change in cfg_weight per word/second of articulation rate
   cfg_range: [0.15, 0.65]
   speed_range: [0.7, 1.4]    # Kokoro

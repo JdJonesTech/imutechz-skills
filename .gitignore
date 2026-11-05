@@ -11,3 +11,4 @@ _out/
 tests/_out/
 .DS_Store
 Thumbs.db
+.tts/

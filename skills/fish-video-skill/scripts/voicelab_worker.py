@@ -113,7 +113,6 @@ def _threads() -> None:
 
 
 def tts_chatterbox(job: dict) -> list[dict]:
-    import copy
     import perth
     if getattr(perth, "PerthImplicitWatermarker", None) is None:
         # the watermark module failed to import (it needs pkg_resources); never generate without it
@@ -123,7 +122,7 @@ def tts_chatterbox(job: dict) -> list[dict]:
     _threads()
     device = job.get("device") or ("cuda" if torch.cuda.is_available() else "cpu")
     model = ChatterboxTTS.from_pretrained(device=device)
-    default, refs, out = copy.deepcopy(model.conds), {}, []
+    default, refs, out = model.conds, {}, []   # Conditionals hold graph tensors: share them, never deepcopy
     for it in job["items"]:
         t0 = time.time()
         seed_all(int(it.get("seed", 0)))
@@ -131,11 +130,11 @@ def tts_chatterbox(job: dict) -> list[dict]:
         ex = float(it.get("exaggeration", 0.5))
         if ref:
             if ref not in refs:
-                model.prepare_conditionals(ref, exaggeration=ex)
-                refs[ref] = copy.deepcopy(model.conds)
-            model.conds = copy.deepcopy(refs[ref])
+                model.prepare_conditionals(ref, exaggeration=ex)       # builds a new Conditionals object
+                refs[ref] = model.conds
+            model.conds = refs[ref]
         else:
-            model.conds = copy.deepcopy(default)
+            model.conds = default
         wav = model.generate(it["text"], exaggeration=ex, cfg_weight=float(it.get("cfg_weight", 0.5)),
                              temperature=float(it.get("temperature", 0.8)))
         dur = write_wav16(it["out"], wav.squeeze().detach().cpu().numpy(), model.sr)

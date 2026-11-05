@@ -13,6 +13,7 @@ Videos are rendered from code. Every frame is a pure function of time, drawn in 
 - Custom SFX cue types with their own level (`brief.mix.sfx_levels`).
 - New QA checks: `explicit cues` and `bare frame`.
 - Chatterbox documented as a free local voice route, with a pacing recipe (`references/voice-direction.md`).
+- Free local voice studio: `fishvideo voice setup|engines|say|audition|check|redo` for Chatterbox and Kokoro (male or female, airy, soft, warm, calm, energetic, emotional, cinematic; pace in words per second), with measured output checks in `fishvideo qa` (`references/local-voices.md`).
 - `references/long-roadmap-videos.md`: what popular roadmap videos do, and memes without copyright claims.
 
 ## What's new in 2.0

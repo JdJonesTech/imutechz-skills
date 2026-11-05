@@ -29,6 +29,7 @@ Read only what the current step needs:
 - Writing any scene → [scene catalogue](references/scene-catalogue.md), including Motion rules and Camera
 - Anything about music, SFX or levels, or "I can't hear the music on my phone" → [sound design](references/sound-design.md)
 - Choosing or directing a voice → [voice direction](references/voice-direction.md)
+- Free local voices (male or female, airy, soft, pace control, `voice setup|audition|check|redo`) → [local voices](references/local-voices.md)
 - Captions and type → [captions & typography](references/captions-and-typography.md)
 - A website or app on screen → [website-tour capture](references/website-tour-capture.md)
 - A reference video to match → [reference breakdowns](references/reference-breakdowns.md), [reference-video analysis](references/reference-video-analysis.md), [trending analysis](references/trending-analysis.md)
