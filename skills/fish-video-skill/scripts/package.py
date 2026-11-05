@@ -6,7 +6,8 @@
     README.md                     index: what each file is, durations, QA status, what to upload where
     video/<slug>-<platform>.mp4   one encoded cut per platform
     captions/<slug>-<platform>.srt|.vtt
-    thumbnails/thumbnail-1280x720.png      YouTube thumbnail (the storyboard's thumbnail scene)
+    thumbnails/thumbnail-1280x720.png      YouTube thumbnail (the one `fishvideo thumb pick` chose, else the storyboard's thumbnail scene),
+                                           with thumbnail-variants.png, thumbnail-feed-*.png and thumbnail-check.md when `thumb make` was run
     thumbnails/cover-<platform>.png        a vertical cover frame per 9:16 / 4:5 cut
     metadata/titles.txt           title options (brief.publish.titles, informed by research/trends.md)
     metadata/<platform>-post.txt  title, description with chapters, sources, hashtags, credits
@@ -169,6 +170,9 @@ def package(project: Path, out: Path | None = None, name: str | None = None) -> 
     r = node("stills.mjs", project, "--platform", "thumbnail", "--at", "0.5", "--out", thumb, capture=True, check=False)
     if not thumb.exists():
         log(f"!! thumbnail failed: {(r.stderr or '')[-300:]}")
+    import thumbs
+    for name in thumbs.ship(project, dest):      # the picked thumbnail, the variants and feed sheets, the check results
+        log(f"  thumbnails: {name}")
     tags = tags_for(brief, trends)
     (md / "tags.txt").write_text(", ".join(tags) + "\n", encoding="utf-8")
     (md / "titles.txt").write_text("\n".join(f"{i + 1}. {t}" for i, t in enumerate(titles)) + "\n", encoding="utf-8")

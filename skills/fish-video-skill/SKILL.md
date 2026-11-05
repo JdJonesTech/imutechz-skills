@@ -32,6 +32,7 @@ Read only what the current step needs:
 - Captions and type → [captions & typography](references/captions-and-typography.md)
 - A website or app on screen → [website-tour capture](references/website-tour-capture.md)
 - A reference video to match → [reference breakdowns](references/reference-breakdowns.md), [reference-video analysis](references/reference-video-analysis.md), [trending analysis](references/trending-analysis.md)
+- Reviewing frames (sheet, lint, guides, variants, palette, compare) or designing, checking and picking thumbnails → [frame design](references/frame-design.md)
 - Platform sizes and limits → [platform specs](references/platform-specs.md)
 - A long video that walks through stages (a roadmap, a learning path), or memes without copyright claims → [long roadmap videos](references/long-roadmap-videos.md)
 - Memes (Indian and world), reaction clips, cue sounds, website screenshots, logos, icons, emoji, or the `meme` scene → [memes and real assets](references/memes-and-real-assets.md)

@@ -31,6 +31,9 @@
     fishvideo screenrec <record|import> <dir> <shot> ...
     fishvideo dissect <video> --out <dir> [--fps 4] [--vtt subs.vtt]
     fishvideo sfx <dir> --platform shorts      place sample SFX (normally inside render)
+  Frame and thumbnail design (references/frame-design.md):
+    fishvideo frame <sheet|lint|guides|variants|palette|compare> ...    review, measure and try looks on rendered stills
+    fishvideo thumb <make|check|sheet|pick|cutout> ...                  designed 1280x720 thumbnails, legibility checks, mock feed
   Finish:
     fishvideo clean <dir> [--yes] [--keep-voice]   remove intermediates (only after the user approves + agrees)
 
@@ -61,7 +64,8 @@ import voice as voicemod
 import interview as ivmod
 
 PASSTHRU = {"yt": "youtube", "trends": "trends", "assets": "assets", "screenrec": "screenrec", "dissect": "dissect", "sfx": "sfx", "clean": "clean",
-            "review": "review", "voiceover": "voiceover", "beats": "beats", "memes": "memes", "sounds": "sounds"}
+            "review": "review", "voiceover": "voiceover", "beats": "beats", "memes": "memes", "sounds": "sounds",
+            "frame": "design", "thumb": "thumbs"}
 
 
 def passthru(cmd: str, argv: list[str]) -> int:
@@ -170,6 +174,15 @@ def cmd_all(a) -> int:
     step("render")
     plats = a.platform.split(",") if a.platform else None
     rendermod.render(project, plats, scale=a.scale, workers=a.workers, fast=a.fast)
+    step("thumbnails")
+    try:
+        import thumbs
+        if not (project / "build" / "thumbnail" / "variants.json").exists():
+            thumbs.make(project)
+        else:
+            log("thumbnail variants up to date (fishvideo thumb make to redraw)")
+    except FishError as e:
+        warn(f"thumbnails: {e}")
     step("qa")
     reps = qamod.qa(project, plats, lint=not a.no_lint)
     step("package")
