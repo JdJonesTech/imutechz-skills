@@ -10,6 +10,7 @@
     fishvideo voice <dir> [--provider elevenlabs|edge-tts|chatterbox|kokoro|none] [--force]
     fishvideo voice setup|engines|say|audition|check|redo|measure ...   free local voices (references/local-voices.md)
     fishvideo music <dir> [--platform youtube]
+    fishvideo music source <dir> [--q "style words"]    licensed CC0 / CC BY track for the trend, else the synthesised score
     fishvideo captions <dir>
     fishvideo stills <dir> [--platform youtube] [--at 1,5,9 | --scenes]
     fishvideo render <dir> [--platform youtube,linkedin] [--scale 0.5] [--from 10 --to 20] [--fast]
@@ -390,6 +391,9 @@ def cli(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in PASSTHRU:
         return passthru(argv[0], argv[1:])
+    if argv[:2] == ["music", "source"]:             # licensed music matching the trend, CC0 / CC BY only (SKILL.md, "Audio")
+        import assets
+        return assets.cli(["music-source", *argv[2:]]) or 0
     if argv and argv[0] == "interview":
         return ivmod.cli(argv[1:])
     if argv and argv[0] == "voice" and len(argv) > 1 and argv[1] in ("setup", "engines", "say", "audition", "check", "redo", "measure", "words"):

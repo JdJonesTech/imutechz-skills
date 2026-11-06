@@ -12,7 +12,7 @@
 
 shared:
   voice: {provider: chatterbox, language: en-US, studio: {gender: male, style: chatterbox-soft, pace: natural}}
-  pacing: {snap: beat, lead_in: 0.1, tail: 0.2, max_word_gap: 0.9, line_gap: 0.05}
+  pacing: {snap: speech, lead_in: 0.1, tail: 0.15, max_word_gap: 0.9, line_gap: 0.2}
   mix: {music_under_voice_db: -12}
   captions: {style: pop}
 
@@ -67,7 +67,7 @@ recipes:
     theme: archive-doc
     style: glow-metaphor
     music: dark-drone
-    pacing: {change_every: 1.0, hard_cuts_per_15s: 2, transitions: [flash, zoom, cut], snap: beat, lead_in: 0.1, tail: 0.2, max_word_gap: 0.9, line_gap: 0.05}
+    pacing: {change_every: 1.0, hard_cuts_per_15s: 2, transitions: [flash, zoom, cut], snap: speech, lead_in: 0.1, tail: 0.15, max_word_gap: 0.9, line_gap: 0.2}
     gate: {sharp_share_min: 0.45, image_share_min: 0.85, image_changes_pm_min: 10, longest_no_image_max: 6, text_share_max: 0.10, image_beats_min: 0.85, screenshot_of_images_max: 0.0, photo_share_min: 0.85}
     beats:
       - {id: s1, type: story, bars: 2, note: "hook: the most striking real photo, one huge line that states the surprise. Frame 0 is already full."}
@@ -95,7 +95,7 @@ recipes:
     theme: bold-shorts
     style: studio-kinetic
     music: hiphop-groove
-    pacing: {change_every: 0.9, hard_cuts_per_15s: 3, transitions: [cut, flash], snap: beat, lead_in: 0.1, tail: 0.2, max_word_gap: 0.9, line_gap: 0.05}
+    pacing: {change_every: 0.9, hard_cuts_per_15s: 3, transitions: [cut, flash], snap: speech, lead_in: 0.1, tail: 0.15, max_word_gap: 0.9, line_gap: 0.2}
     gate: {image_share_min: 0.0, image_changes_pm_min: 0, longest_no_image_max: 9999, text_share_max: 0.15, graphic_share_min: 0.85, image_beats_min: 0.0, screenshot_of_images_max: 0.0, photo_share_min: 0.0}
     beats:
       - {id: hook,  type: bold, bars: 2, note: "the claim in 2 to 4 giant words; shape: burst or circle"}

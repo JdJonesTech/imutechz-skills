@@ -866,6 +866,10 @@ def handles(voice_cfg: dict, provider: str) -> bool:
     return importlib.util.find_spec("kokoro") is None and engine_ready("kokoro")
 
 
+# a line's `tag:` in the storyboard shapes its emotion inside the preset's approved range (soft: 0.32-0.55): hooks and reveals lift, setup stays low
+TAG_MOODS = {"hook": "urgent", "reveal": "excited", "punchline": "triumphant", "setup": "serious", "beat": "neutral"}
+
+
 def _project_lines(project: Path, cfg: dict) -> list[dict]:
     from storyboard import scene_lines
     sb = load_yaml(project / "storyboard.yaml")
@@ -875,7 +879,7 @@ def _project_lines(project: Path, cfg: dict) -> list[dict]:
     for s in sb["scenes"]:
         for ln in scene_lines(s, pron):
             o = dict(over.get(ln["id"]) or {})
-            out.append({"id": ln["id"], "say": ln["say"], "display": ln.get("display", ln["say"]), "mood": o.pop("mood", None) or s.get("mood"), "over": o or None})
+            out.append({"id": ln["id"], "say": ln["say"], "display": ln.get("display", ln["say"]), "mood": o.pop("mood", None) or TAG_MOODS.get(ln.get("tag") or "") or s.get("mood"), "over": o or None})
     return out
 
 

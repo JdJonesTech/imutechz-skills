@@ -29,7 +29,7 @@ def test_recipes_exist_and_name_recommended_themes():
 def test_recipe_brief_has_the_soft_voice_pacing_and_mix():
     b = recipes.brief_over("roadmap-explainer")
     assert b["voice"]["provider"] == "chatterbox" and b["voice"]["studio"]["style"] == "chatterbox-soft"
-    assert b["pacing"]["max_word_gap"] == 0.9 and b["pacing"]["line_gap"] == 0.05
+    assert b["pacing"]["max_word_gap"] == 0.9 and b["pacing"]["line_gap"] == 0.2
     assert b["mix"]["music_under_voice_db"] == -12 and b["recipe"] == "roadmap-explainer"
 
 
@@ -386,7 +386,7 @@ def test_voice_is_offered_first_and_recommended_in_the_interview():
     brief = {"interview": {"answers": {"voice": "chatterbox-soft", "language": "en-US", "voice_energy": "calm"}}}
     out = iv.apply(brief)
     assert out["voice"]["provider"] == "chatterbox" and out["voice"]["studio"]["style"] == "chatterbox-soft"
-    assert out["pacing"]["max_word_gap"] == 0.9 and out["pacing"]["line_gap"] == 0.05 and out["mix"]["music_under_voice_db"] == -12
+    assert out["pacing"]["max_word_gap"] == 0.9 and out["pacing"]["line_gap"] == 0.2 and out["mix"]["music_under_voice_db"] == -12
 
 
 def test_missing_chatterbox_stops_with_the_setup_command_and_no_silent_fallback(tmp_path, monkeypatch):

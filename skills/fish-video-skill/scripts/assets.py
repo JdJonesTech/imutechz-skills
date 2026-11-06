@@ -781,6 +781,92 @@ def source(project, query: str, beat: str | None = None, n: int = 1, providers=N
     return out
 
 
+# ------------------------------------------------------------------ `music source`: licensed music that fits the trend's style
+MUSIC_OK = {"cc0": "CC0", "pdm": "Public Domain", "by": "CC BY"}          # no NC, no ND, no SA: the channel may be monetised
+
+
+def _music_queries(project: Path, query: str | None) -> list[str]:
+    if query:
+        return [query]
+    qs = []
+    ts = project / "research" / "trend-sounds.json"
+    if ts.exists():
+        st = [w for w, n in (load_json(ts).get("styles") or []) if n >= 2][:3]      # a style one video uses is not a trend
+        if st:
+            qs.append(" ".join(st) + " instrumental")
+    brief = load_yaml(project / "brief.yaml") or {}
+    if (brief.get("music") or {}).get("search"):
+        qs.append(brief["music"]["search"])
+    qs.append("instrumental background")
+    return list(dict.fromkeys(qs))
+
+
+def music_source(project, query: str | None = None, target: float | None = None, tries: int = 3) -> dict:
+    """Find, verify, download and credit one CC0 / CC BY track for the project; otherwise report that the synthesised score is used.
+
+    The licence is confirmed twice: in the search result and again on the track's own API record. Trimming, looping under the
+    voice and ducking are done by render (`prepare_track` + the mix). Returns {"used": "licensed"|"synth", ...}."""
+    project = ensure_project(project)
+    from fvcore import load_json as _lj
+    tl = next(iter(sorted((project / "build").glob("timeline-*.json"))), None)
+    target = target or (_lj(tl).get("duration") if tl else None) or 30
+    mdir = project / "assets" / "music"
+    cands, seen = [], set()
+    for q in _music_queries(project, query):
+        try:
+            d = fvnet.fetch_json("https://api.openverse.org/v1/audio/", {"q": q, "page_size": 20, "license": "cc0,pdm,by"})
+        except Exception as e:                                          # noqa: BLE001
+            warn(f"music source: search '{q}' failed: {str(e)[:80]}")
+            continue
+        for r in d.get("results", []):
+            lic = (r.get("license") or "").lower()
+            dur = (r.get("duration") or 0) / 1000
+            if r["id"] in seen or lic not in MUSIC_OK or dur < 15 or dur > 900:
+                continue
+            seen.add(r["id"])
+            cands.append((0 if dur >= target else 1, abs(dur - target), q, r))
+    cands.sort(key=lambda c: c[:2])
+    sc = project / "score.json"                    # projects must not all get the same track: the project's own seed picks among the best few
+    if sc.exists() and len(cands) > 1:
+        k = int(load_json(sc).get("seed") or 0) % min(len(cands), 6)
+        cands = cands[k:] + cands[:k]
+    fallback = {"used": "synth", "reason": "no suitable CC0 / CC BY track found" if not cands else "no candidate could be verified and downloaded"}
+    for _, _, q, r in cands[: tries * 3]:
+        try:
+            det = fvnet.fetch_json(f"https://api.openverse.org/v1/audio/{r['id']}/")      # confirm the licence at the source record
+        except Exception:                                               # noqa: BLE001
+            continue
+        lic = (det.get("license") or "").lower()
+        if lic not in MUSIC_OK or not det.get("url"):
+            continue
+        label = MUSIC_OK[lic] + (f" {det.get('license_version') or '4.0'}" if lic == "by" else "")
+        rec = _rec("openverse", det["id"], "music", det.get("title") or q, det.get("foreign_landing_url") or det.get("url"), det["url"], None,
+                   duration=(det.get("duration") or 0) / 1000, author=det.get("creator"), author_url=det.get("creator_url"), lic=label, lic_url=det.get("license_url") or "")
+        if fvnet.risk_of(rec) != "safe":
+            continue
+        ext = _ext(det["url"], "." + str(det.get("filetype") or "mp3").lower()[:5])
+        dest = mdir / f"{fvnet.safe_name(rec['id'])}{ext}"
+        try:
+            fvnet.download_file(det["url"], dest, timeout=120, max_bytes=MAX_BYTES["music"], types=CTYPES["music"])
+        except FishError as e:
+            warn(f"music source: {rec['id']}: {str(e)[:80]}")
+            continue
+        for old in mdir.glob("*"):                                      # one track per project: render uses the first file in assets/music
+            if old != dest and old.is_file():
+                old.unlink()
+        rec["file"] = str(dest.relative_to(project)).replace("\\", "/")
+        rec["credit"] = fvnet.credit_line(rec)
+        add_credit(project, rec)
+        out = {"used": "licensed", "file": rec["file"], "title": rec["title"], "author": rec["author"], "license": rec["license"], "license_url": rec["license_url"],
+               "source": rec["url"], "seconds": rec["duration"], "query": q, "credit": rec["credit"]}
+        save_json(project / "build" / "music-source.json", out)
+        log(f"music: licensed track {rec['title']} by {rec['author']} [{rec['license']}] -> {rec['file']}; credit written to assets/credits.json")
+        return out
+    save_json(project / "build" / "music-source.json", fallback)
+    log(f"music: {fallback['reason']}: the synthesised score is used (mood and seed in score.json)")
+    return fallback
+
+
 def adopt(project, license: str, author: str, source: str, label: str | None = None, files: list[str] | None = None) -> dict:
     """For an existing project: write a credit record for every referenced picture that has none (using the licence, author and source the
     caller asserts), and set `label` on story/image/statement beats that lack one. Nothing is guessed: all three facts must be given."""
@@ -846,6 +932,7 @@ def cli(argv=None) -> int:
     a.add_argument("--before", type=int); a.add_argument("--min-width", type=int, help="skip results narrower than this many px (default: the panel width at 2.2x)"); a.add_argument("--min-height", type=int, help="skip results shorter than this many px (default: half the frame height at 2.2x)")
     a = sp.add_parser("adopt"); a.add_argument("project"); a.add_argument("--license", required=True); a.add_argument("--author", required=True)
     a.add_argument("--source", required=True); a.add_argument("--label", choices=["archive photo", "illustrative"])
+    a = sp.add_parser("music-source"); a.add_argument("project"); a.add_argument("--q"); a.add_argument("--target", type=float)
     a = sp.add_parser("plan"); a.add_argument("project")
     a = sp.add_parser("credits"); a.add_argument("project")
     ns = ap.parse_args(argv)
@@ -876,6 +963,8 @@ def cli(argv=None) -> int:
         return 0 if got else 1
     elif ns.cmd == "adopt":
         adopt(ns.project, ns.license, ns.author, ns.source, ns.label)
+    elif ns.cmd == "music-source":
+        music_source(ns.project, ns.q, ns.target)
     elif ns.cmd == "plan":
         for r in plan_report(ns.project):
             log(f"{r['beat']:<22} {r['type']:<10} {r['kind']:<8} {', '.join(r['images']) or 'NEEDS an image: assets source <dir> \"<query>\" --beat ' + r['beat']}")

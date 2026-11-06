@@ -248,7 +248,8 @@ def info(url: str) -> dict:
     r = normalize(e)
     r.update({"chapters": e.get("chapters") or [], "description": e.get("description") or "", "width": e.get("width"),
               "height": e.get("height"), "categories": e.get("categories") or [], "channel_url": e.get("channel_url"),
-              "channel_id": e.get("channel_id")})
+              "channel_id": e.get("channel_id"),
+              **{k: e.get(k) for k in ("track", "artist", "album", "creator") if e.get(k)}})
     return r
 
 

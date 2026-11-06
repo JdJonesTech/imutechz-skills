@@ -547,6 +547,79 @@ def derived_theme(project) -> dict | None:
     return None
 
 
+# ------------------------------------------------------------------ sounds in trending videos (analysis only, never downloaded)
+STYLE_WORDS = ["lofi", "lo-fi", "phonk", "cinematic", "orchestral", "ambient", "dark", "epic", "trap", "hip hop", "synthwave", "piano", "acoustic",
+               "upbeat", "chill", "drill", "house", "edm", "horror", "suspense", "emotional", "sad", "funny", "meme", "viral sound", "slowed", "sped up", "remix"]
+_SOUND_LINE = re.compile(r"(?im)^\W*(?:music|song|track|audio|sound|soundtrack|beat|instrumental)\s*[:\-\u2013]\s*(.{3,120})$")
+_NOTE_LINE = re.compile(r"[\u266a\u266b\U0001F3B5\U0001F3B6]\s*([^\n#]{3,100})")
+
+
+def find_sounds(rec: dict) -> list[dict]:
+    """Sound or music mentions in one video's metadata. Only what the data states; nothing is guessed."""
+    out = []
+    if rec.get("track"):
+        out.append({"sound": f"{rec['track']}" + (f" - {rec['artist']}" if rec.get("artist") else ""), "via": "platform music metadata"})
+    blob = {"title": rec.get("title") or "", "description": rec.get("description") or "", "tags": " \n".join(rec.get("tags") or [])}
+    for where, text in blob.items():
+        if re.search(r"original sound|original audio", text, re.I):
+            out.append({"sound": "original sound", "via": where})
+        for m in _SOUND_LINE.finditer(text):
+            out.append({"sound": m.group(1).strip(), "via": where})
+        for m in _NOTE_LINE.finditer(text):
+            out.append({"sound": m.group(1).strip(), "via": where})
+    seen, uniq = set(), []
+    for o in out:
+        k = o["sound"].lower()
+        if k not in seen:
+            seen.add(k)
+            uniq.append(o)
+    return uniq
+
+
+def sounds(project, top: int = 8) -> dict:
+    """`trends --sounds`: sounds and music named in the trend results' metadata, and the common style words.
+    Writes research/trend-sounds.json and trend-sounds.md. The licensed route to a trending sound is YouTube's own Shorts editor."""
+    project = ensure_project(project)
+    src = project / "research" / "trends.json"
+    if not src.exists():
+        raise SystemExit("trends --sounds: run `fishvideo trends <dir>` first (it needs the live results)")
+    from fvcore import load_json
+    data = load_json(src)
+    rows = (data.get("results") or [])[:top]
+    seen, styles, errs = [], Counter(), 0
+    for r in rows:
+        try:
+            full = youtube.info(r["url"])
+        except Exception as e:                                       # noqa: BLE001 - one video failing must not stop the rest
+            errs += 1
+            full = {"title": r.get("title"), "tags": []}
+            warn(f"sounds: {r.get('url')}: {str(e)[:80]}")
+        found = find_sounds(full)
+        text = " ".join([full.get("title") or "", " ".join(full.get("tags") or []), (full.get("description") or "")[:600]]).lower()
+        for w in STYLE_WORDS:
+            if w in text:
+                styles[w] += 1
+        seen.append({"title": r.get("title"), "url": r.get("url"), "sounds": found})
+    named = sum(1 for s in seen if s["sounds"])
+    res = {"topic": data.get("topic"), "checked": len(seen), "with_named_sound": named, "fetch_errors": errs,
+           "styles": styles.most_common(6), "videos": seen, "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")}
+    out = project / "research"
+    save_json(out / "trend-sounds.json", res)
+    L = [f"# Sounds in trending videos: {data.get('topic')}", "",
+         f"Checked the metadata (title, description, tags, platform music fields) of the top {len(seen)} results in research/trends.json. "
+         f"{named} of them name a sound or track." + ("" if named else " The data does not expose it: YouTube's public metadata does not list the sound used in a Short unless the creator wrote it in the description."), ""]
+    for s in seen:
+        L.append(f"- {s['title']} ({s['url']}): " + (", ".join(f"{x['sound']} [{x['via']}]" for x in s["sounds"]) if s["sounds"] else "no sound named in the data"))
+    L += ["", "Common style words in titles, tags and descriptions: " + (", ".join(f"{w} ({n})" for w, n in res["styles"]) if res["styles"] else "none found"),
+          "Tempo and key are not in the data; they are not estimated here.", "",
+          "Rights: popular tracks and viral sounds are copyrighted, so this tool never downloads or embeds them. To use a trending sound legally, "
+          "attach it in YouTube's own Shorts editor when you upload (Add sound). For a licensed track inside the video, run `fishvideo music source <dir>` "
+          "(CC0 and CC BY only); otherwise the synthesised score is used.", ""]
+    (out / "trend-sounds.md").write_text("\n".join(L), encoding="utf-8")
+    log(f"wrote research/trend-sounds.md ({named}/{len(seen)} videos name a sound; styles: {res['styles'][:3]})")
+    return res
+
+
 def cli(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="trends.py", description=__doc__.split("\n")[0])
     ap.add_argument("project")
@@ -560,8 +633,11 @@ def cli(argv=None) -> int:
     ap.add_argument("--derive-theme", action="store_true")
     ap.add_argument("--unavailable", metavar="REASON")
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--sounds", action="store_true", help="list sounds/music named in the trend results, write research/trend-sounds.md")
     ns = ap.parse_args(argv)
-    if ns.unavailable:
+    if ns.sounds:
+        sounds(Path(ns.project))
+    elif ns.unavailable:
         mark_unavailable(Path(ns.project), ns.unavailable)
     elif ns.derive_theme:
         derive_theme(Path(ns.project))

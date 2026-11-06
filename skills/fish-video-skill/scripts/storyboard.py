@@ -27,6 +27,7 @@ from fvcore import (FishError, deep_merge, ensure_project, load_json, load_yaml,
                     project_config, save_json, save_yaml, sha1, slugify, warn)
 from captions import chunk_words
 import themes
+import score as score_mod
 
 SCENE_TYPES = {"title", "kinetic", "bullets", "stat", "chart", "diagram", "whiteboard", "steps", "quote",
                "compare", "terminal", "tour", "image", "end", "thumbnail",
@@ -136,6 +137,24 @@ def estimate_seconds(spoken: str, wpm: float) -> float:
     return round(words / wpm * 60 + pauses, 2)
 
 
+MAX_PAUSE = 0.8                      # a planned pause (`pause:` on a line) for a reveal or punchline, never longer
+LINE_TAGS = ("hook", "setup", "reveal", "punchline", "beat")
+
+
+def line_gaps(lines: list[dict]) -> dict:
+    """Silence between neighbouring narration lines in seconds (video time), with the median and maximum."""
+    g = [round(b["at"] - (a["at"] + a["dur"]), 3) for a, b in zip(lines, lines[1:])]
+    s = sorted(g)
+    med = (s[len(s) // 2] if len(s) % 2 else (s[len(s) // 2 - 1] + s[len(s) // 2]) / 2) if s else 0.0
+    return {"median": round(med, 3), "max": max(g) if g else 0.0, "values": g}
+
+
+def speech_pacing(pac: dict) -> dict:
+    """Narration drives time: the next line starts 0.15-0.35 s after the last, whatever the format."""
+    c = lambda v, lo, hi: min(hi, max(lo, float(v)))
+    return {"lead": c(pac.get("lead_in", 0.1), 0.05, 0.15), "tail": c(pac.get("tail", 0.15), 0.1, 0.2), "gap": c(pac.get("line_gap", 0.25), 0.15, 0.35)}
+
+
 def scene_lines(scene: dict, pron: dict | None = None) -> list[dict]:
     """The narration lines of a scene: [{id, text, display, say, units, at?}]."""
     raw = scene.get("say") or []
@@ -143,14 +162,15 @@ def scene_lines(scene: dict, pron: dict | None = None) -> list[dict]:
         raw = [raw]
     out = []
     for k, ln in enumerate(raw):
-        at = None
+        at, pause, tag = None, 0.0, None
         if isinstance(ln, dict):
-            at, ln = ln.get("at"), ln.get("text", "")
+            at, pause, tag, ln = ln.get("at"), ln.get("pause") or 0.0, ln.get("tag"), ln.get("text", "")
         text = apply_pronunciations(str(ln).strip(), pron)
         if not text:
             continue
         disp, say, units = parse_say(text)
-        out.append({"id": f"{scene['id']}-{k + 1}", "text": text, "display": disp, "say": say, "units": units, "at": at})
+        out.append({"id": f"{scene['id']}-{k + 1}", "text": text, "display": disp, "say": say, "units": units, "at": at,
+                    "pause": min(max(float(pause), 0.0), MAX_PAUSE), "tag": tag if tag in LINE_TAGS else None})
     return out
 
 
@@ -277,10 +297,16 @@ def resolve(project: Path, platform: str, cfg: dict, sb: dict, clips: dict | Non
     prof = cfg["platforms"].get(platform)
     if not prof:
         raise FishError(f"unknown platform {platform!r} (one of {', '.join(cfg['platforms'])})")
-    bpm = float(sb.get("bpm") or cfg["tempo"]["bpm"])
+    pac = cfg["pacing"]
+    snap = pac.get("snap") or "speech"
+    snap = "speech" if snap == "beat" else snap          # "beat" was the Shorts-only form of the same idea
+    explicit_score = deep_merge(brief.get("score") or {}, sb.get("score") or {})
+    score_d = score_mod.derive(project, brief, explicit_score)
+    bpm = float(sb.get("bpm") or (score_d.get("bpm") if snap == "speech" else None) or cfg["tempo"]["bpm"])
     bpb = int(cfg["tempo"]["beats_per_bar"])
     beat, bar = 60.0 / bpm, 60.0 / bpm * bpb
-    pac = cfg["pacing"]
+    sp = speech_pacing(pac) if snap == "speech" else None
+    lead_in, tail_s, line_gap = (sp["lead"], sp["tail"], sp["gap"]) if sp else (pac["lead_in"], pac["tail"], pac["line_gap"])
     lang = brief.get("language", "en-IN")
     wpm = words_per_minute(cfg, lang)
     pron = (brief.get("voice") or {}).get("pronunciations") or {}
@@ -306,7 +332,7 @@ def resolve(project: Path, platform: str, cfg: dict, sb: dict, clips: dict | Non
     for i, s in enumerate(scenes):
         s = dict(s)
         lines = scene_lines(s, pron) if voice_on and platform != "thumbnail" else []
-        local = pac["lead_in"]
+        local = lead_in
         placed = []
         for ln in lines:
             clip = clips.get(ln["id"])
@@ -314,26 +340,26 @@ def resolve(project: Path, platform: str, cfg: dict, sb: dict, clips: dict | Non
             if clip and not fresh:
                 warn(f"{ln['id']}: narration changed since the voice was made; re-run `fishvideo voice`")
             dur = clip["speech_end"] if fresh else estimate_seconds(ln["say"], wpm)
-            start = float(ln["at"]) * beat if ln.get("at") is not None else local
+            start = float(ln["at"]) * beat if ln.get("at") is not None else local + float(ln.get("pause") or 0)
             units = map_units(ln["units"], clip["words"]) if fresh else estimate_units(ln["units"], dur)
             placed.append({**ln, "local": start, "dur": dur, "clip": clip if fresh else None, "units_rel": units})
-            local = start + dur + pac["line_gap"]
-        speech_end = (placed[-1]["local"] + placed[-1]["dur"] + pac["tail"]) if placed else 0
+            local = start + dur + line_gap
+        speech_end = (placed[-1]["local"] + placed[-1]["dur"] + tail_s) if placed else 0
         need = max(min_visual(s, cfg, beat, shots), speech_end)
-        if placed and pac.get("snap") == "beat":
-            # Shorts: the line sets the length. Animation minimums made dead air after short lines
-            need = max(speech_end, min(need, pac.get("min_narrated", 2.5)))
+        if placed and snap == "speech":
+            # the line sets the length: animation minimums and recipe slots made dead air after short lines
+            need = max(speech_end, min(need, speech_end + float(pac.get("max_hold", 0.25))))   # hold a picture at most 0.25 s past the last word
         ts = float((s.get("ts") or {}).get(platform, 1) if isinstance(s.get("ts"), dict) else s.get("ts") or 1)
         if placed:
             ts = 1.0  # narrated scenes play in real time, or the voice drifts off the picture
         # pacing.snap: "bar" (cuts on 2 s bars, long formats) or "beat" (Shorts: no dead air after a line)
         if s.get("bars"):
             bars = s["bars"]
-        elif pac.get("snap") == "beat":
-            bars = max(0.5, math.ceil(need / ts / beat - 1e-6) * beat / bar)
+        elif snap == "speech" and placed:
+            bars = round(max(0.25, need / ts / bar), 4)        # follows the speech exactly; the music moves to it, not the voice to the music
         else:
             bars = max(1, math.ceil(need / ts / bar - 1e-6))
-        if s.get("bars_min"):                    # a recipe slot: the narration sets the length, never shorter than this
+        if s.get("bars_min") and not (snap == "speech" and placed):   # a recipe slot: only a silent beat or the legacy bar mode keeps its minimum
             bars = max(bars, s["bars_min"])
         if s.get("bars") and need / ts > bars * bar + 0.01:
             warn(f"{platform}: scene {s['id']} needs {need:.1f}s but has {bars} bars ({bars * bar:.1f}s)")
@@ -354,14 +380,15 @@ def resolve(project: Path, platform: str, cfg: dict, sb: dict, clips: dict | Non
             at = t0 + pl["local"]
             words = [{"w": u["w"], "t0": round(at + u["t0"], 3), "t1": round(at + u["t1"], 3)} for u in pl["units_rel"]]
             all_words.extend(words)
-            vl = {"id": pl["id"], "scene": s["id"], "at": round(at, 3), "display": pl["display"], "say": pl["say"], "dur": round(pl["dur"], 3), "estimated": pl["clip"] is None}
+            vl = {"id": pl["id"], "scene": s["id"], "at": round(at, 3), "display": pl["display"], "say": pl["say"], "dur": round(pl["dur"], 3), "estimated": pl["clip"] is None,
+                  **({"tag": pl["tag"]} if pl.get("tag") else {}), **({"pause": pl["pause"]} if pl.get("pause") else {})}
             if pl["clip"]:
                 vl.update({"wav": pl["clip"]["wav"], "offset": pl["clip"].get("speech_start", 0.0), "provider": pl["clip"].get("provider")})
             voice_lines.append(vl)
         # `caption:` on-screen captions for a scene with no narration (silent cuts, music-only Shorts)
         if not placed and s.get("caption") and platform != "thumbnail":
             for ln in scene_lines({"id": s["id"] + "-cap", "say": s["caption"]}):
-                start = float(ln["at"]) * beat if ln.get("at") is not None else pac["lead_in"]
+                start = float(ln["at"]) * beat if ln.get("at") is not None else lead_in
                 dur = min(estimate_seconds(ln["say"], wpm) * 1.15, max(0.6, bars * bar * ts - start - 0.3))
                 all_words.extend({"w": u["w"], "t0": round(t0 + start + u["t0"], 3), "t1": round(t0 + start + u["t1"], 3)}
                                  for u in estimate_units(ln["units"], dur))
@@ -397,10 +424,10 @@ def resolve(project: Path, platform: str, cfg: dict, sb: dict, clips: dict | Non
         if th["caption_style"] and not (sb.get("captions") or {}).get("style") and (brief.get("captions") or {}).get("style") in (None, "karaoke"):
             cap_style = th["caption_style"]
     used_shots = sorted({(s["params"] or {}).get("shot") for s in out_scenes if s["type"] in ("tour", "thumbnail") and (s["params"] or {}).get("shot") in shots})
-    score = deep_merge(cfg["score"], sb.get("score") or {})
+    score = deep_merge(cfg["score"], {k: v for k, v in score_d.items() if k != "fixed"})
     return {
         "platform": platform, "label": prof.get("label", platform), "W": prof["W"], "H": prof["H"], "fps": prof.get("fps", 30),
-        "bpm": bpm, "beats_per_bar": bpb, "bars": t_bar, "duration": round(total, 4), "frames": int(round(total * prof.get("fps", 30))),
+        "bpm": bpm, "beats_per_bar": bpb, "snap": snap, "gaps": line_gaps(voice_lines), "bars": t_bar, "duration": round(total, 4), "frames": int(round(total * prof.get("fps", 30))),
         "lang": brief.get("language", "en-IN"), "title": brief.get("title", ""),
         "theme": theme, "brand": {**{k: brand.get(k, "") for k in ("name", "url", "logo", "tagline")}, "explicit_name": bool((brief.get("brand") or {}).get("name"))},
         "style": sb.get("style") or brief.get("style"), "anchor": sb.get("anchor"),

@@ -87,6 +87,7 @@ def test_validate_catches_errors():
 
 def test_resolve_snaps_to_bars(smoke_project):
     cfg = fvcore.project_config(smoke_project)
+    cfg["pacing"]["snap"] = "bar"          # the old grid is opt-in now; narration drives time by default
     story = fvcore.load_yaml(smoke_project / "storyboard.yaml")
     tl = sb.resolve(smoke_project, "youtube", cfg, story)
     assert tl["W"] == 1920 and tl["bpm"] == 120
@@ -105,6 +106,7 @@ def test_resolve_snaps_to_bars(smoke_project):
 
 def test_resolve_uses_voice_clip_lengths(smoke_project):
     cfg = fvcore.project_config(smoke_project)
+    cfg["pacing"].update(snap="bar", lead_in=0.35, tail=0.55)          # legacy bar grid
     story = fvcore.load_yaml(smoke_project / "storyboard.yaml")
     line = sb.scene_lines(story["scenes"][0], cfg["brief"]["voice"]["pronunciations"])[0]
     clip = {"say": line["say"], "speech_end": 7.3, "wav": "x.wav", "words": [{"text": "x", "start": 0.0, "end": 7.3, "char": 0}]}
@@ -515,3 +517,30 @@ def test_package_slug_follows_the_current_title_not_the_prompt():
     assert package.package_slug(b) == "how-vector-search-works"
     b["title"] = "Renamed Later"
     assert package.package_slug(b) == "renamed-later"
+
+
+def test_speech_mode_cuts_follow_the_voice_and_gaps_stay_small(smoke_project):
+    cfg = fvcore.project_config(smoke_project)
+    story = fvcore.load_yaml(smoke_project / "storyboard.yaml")
+    lines = [l for s in story["scenes"] for l in sb.scene_lines(s)]
+    clips = {l["id"]: {"say": l["say"], "speech_end": 3.1, "wav": "x.wav", "words": [{"text": "x", "start": 0.0, "end": 3.1, "char": 0}]} for l in lines}
+    tl = sb.resolve(smoke_project, "shorts", cfg, story, clips)
+    assert tl["snap"] == "speech"
+    g = tl["gaps"]
+    assert g["values"] and 0.1 <= min(g["values"]) and g["max"] <= 0.6, g
+    # a planned pause is honoured and capped at 0.8 s
+    assert sb.scene_lines({"id": "x", "say": [{"text": "Wait.", "pause": 5, "tag": "reveal"}]})[0]["pause"] == 0.8
+    assert sb.scene_lines({"id": "x", "say": [{"text": "Wait.", "tag": "nonsense"}]})[0]["tag"] is None
+
+
+def test_two_projects_get_different_scores_and_the_score_is_stored(tmp_path):
+    import score
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir(); b.mkdir()
+    sa = score.derive(a, {"title": "Onoda part one", "music": {"mood": "dark-drone"}})
+    sb2 = score.derive(b, {"title": "Cold brew in 60 seconds", "music": {"mood": "lofi-tech"}})
+    assert score.signature(sa) != score.signature(sb2) and sa["seed"] != 12345
+    assert (a / "score.json").exists() and score.derive(a, {"title": "changed later"}) == sa    # stored: repeatable
+    other = score.derive(tmp_path / "c", {"title": "Onoda part two", "music": {"mood": "dark-drone"}})
+    assert other["seed"] != sa["seed"]
+    assert score.derive(tmp_path / "d", {"score": {"fixed": True, "key": "G"}}, {"fixed": True, "key": "G"}) == {"key": "G"}

@@ -279,7 +279,7 @@ def apply(brief: dict, project: Path | None = None) -> dict:
     plats = brief.get("platforms") or []
     if plats and all(p in ("shorts", "reels", "tiktok") for p in plats) or (brief.get("length") or 999) <= 90:
         pac = brief.setdefault("pacing", {})
-        for k, v in {"snap": "beat", "lead_in": 0.1, "tail": 0.2, "max_word_gap": 0.3}.items():
+        for k, v in {"snap": "speech", "lead_in": 0.1, "tail": 0.15, "max_word_gap": 0.3}.items():
             pac.setdefault(k, v)
     return brief
 
@@ -333,7 +333,7 @@ def _apply_voice(brief: dict, a: dict) -> None:
         voice["studio"] = {"gender": "male", "style": "chatterbox-soft", "pace": "natural"}
         voice["delivery"] = "soft"
         pac = brief.setdefault("pacing", {})
-        pac.update({"max_word_gap": 0.9, "line_gap": 0.05})
+        pac.update({"max_word_gap": 0.9, "line_gap": 0.2})
         brief.setdefault("mix", {})["music_under_voice_db"] = -12
         return
     elif v["provider"] == "kokoro":
