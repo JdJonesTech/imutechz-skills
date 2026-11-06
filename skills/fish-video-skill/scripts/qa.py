@@ -343,6 +343,14 @@ def qa_platform(project: Path, platform: str, lint: bool = True, preview: bool =
     res.append(explicit_cues(load_yaml(project / "storyboard.yaml"), info.get("cues", []), (tl.get("sfx") or {}).get("density") or "rich"))
     res.append(bare_regions(video))
     res.append(cue_sounds(project, load_yaml(project / "storyboard.yaml")))
+    try:
+        import gates
+        _g = gates.recipe_gate((project_config(project)["brief"] or {}).get("recipe"))
+        if _g.get("sharp_share_min"):
+            _m, _f = gates.sharp_failures(project, video)
+            res.append({"check": "sharp image coverage", "status": "FAIL" if _f else "PASS", "detail": (_f[0] if _f else f"sharp picture covers {_m['mean']:.0%} of the frame (needs {_g['sharp_share_min']:.0%}+; weakest scene {_m['min']:.0%})")})
+    except Exception as e:                                  # noqa: BLE001 - a measuring problem must show, not vanish
+        res.append({"check": "sharp image coverage", "status": "WARN", "detail": f"not measured: {e}"})
     res.append(asset_licences(project))
     res += meme_checks(project)
     # legibility lint

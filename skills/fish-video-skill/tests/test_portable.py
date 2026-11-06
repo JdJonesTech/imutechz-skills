@@ -2,6 +2,7 @@
 import itertools
 import json
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -466,7 +467,7 @@ def _rows(f, side, kind="thumbnail"):
 
 
 GOOD_TEXT = {"text": "GENAI", "box": [52, 112, 500, 160], "px": 176, "color": "#f2b722", "words": 1}
-GOOD_TILE = [730, 590, 118, 118]
+GOOD_TILE = [730, 560, 118, 118]
 
 
 def test_check_passes_a_clean_road_layout(tmp_path):
@@ -681,10 +682,10 @@ def test_missing_theme_fonts_stop_with_the_install_command(tmp_path, monkeypatch
 
 def test_story_fit_matches_the_stage_and_never_enlarges_past_the_limit():
     js = (SKILL / "scripts" / "stage" / "scenes" / "story.js").read_text()
-    assert "cover <= 1.3" in js and "Math.min(1.5, cover)" in js and gates.MAX_UPSCALE == 1.5
+    assert "cover <= 1.3" in js and "Math.min(2.2, cover)" in js and gates.MAX_UPSCALE == 2.2
     assert gates.story_fit(1920, 1080, 1920, 1080)["mode"] == "bleed"
     f = gates.story_fit(450, 299, 1080, 1920)
-    assert f["mode"] == "frame" and f["scale"] == 1.5
+    assert f["mode"] == "frame" and f["scale"] == 2.2
 
 
 def test_resolution_gate_fails_a_picture_too_small_for_its_use(tmp_path):
@@ -869,3 +870,67 @@ def test_adopt_gives_an_existing_project_a_message_and_a_one_command_fix(tmp_pat
 
 def test_docs_say_library_of_congress_may_be_unavailable():
     assert "may answer 403" in (SKILL / "references" / "recipes-and-themes.md").read_text()
+
+
+# ------------------------------------------------------------------ last round: sharp coverage, captions, thumbnail type and margins
+def test_captions_never_float_a_lone_connecting_word():
+    import captions as C
+    w = [{"w": x, "t0": i * 0.3 + (0.9 if i >= 6 else 0), "t1": i * 0.3 + 0.25 + (0.9 if i >= 6 else 0)} for i, x in enumerate("The army sent two Lewis guns and 10,000 rounds.".split())]
+    texts = [c["text"] for c in C.chunk_words(w)]
+    assert "and" not in texts and all(len(t.split()) > 1 for t in texts)
+
+
+def _frame_png(tmp_path, name, blurred_card):
+    import numpy as np
+    from PIL import Image, ImageFilter
+    rng = np.random.default_rng(5)
+    photo = Image.fromarray(np.clip(rng.normal(128, 40, (960, 540, 3)), 0, 255).astype("uint8"))
+    f = tmp_path / name
+    if not blurred_card:
+        photo.save(f)                                                           # a sharp full-bleed picture
+    else:
+        bg = photo.filter(ImageFilter.GaussianBlur(28))                         # the blurred backdrop with a small sharp card
+        bg.paste(photo.crop((0, 0, 280, 220)), (130, 120))
+        bg.save(f)
+    return f
+
+
+def test_sharp_coverage_separates_full_pictures_from_small_cards_on_blur(tmp_path):
+    sharp = gates.sharp_share_of(_frame_png(tmp_path, "a.png", False))
+    small = gates.sharp_share_of(_frame_png(tmp_path, "b.png", True))
+    assert sharp > 0.9 and small < 0.2
+    g = gates.recipe_gate("story-short")
+    assert g["sharp_share_min"] == 0.45 and small < g["sharp_share_min"] <= sharp
+
+
+def test_sharp_failure_names_the_weak_scenes_for_a_video(tmp_path):
+    import subprocess
+    from fvcore import ffmpeg_bin
+    p = _project(tmp_path, [{"id": "a", "type": "story", "bars": 2, "params": {"src": "a.jpg"}}])
+    png = _frame_png(tmp_path, "c.png", True)
+    mp4 = tmp_path / "v.mp4"
+    subprocess.run([ffmpeg_bin(), "-y", "-v", "error", "-loop", "1", "-i", str(png), "-t", "4", "-pix_fmt", "yuv420p", str(mp4)], check=True)
+    m, f = gates.sharp_failures(p, mp4, "story-short")
+    assert f and "needs 45%" in f[0] and "a " in f[0]
+    ok = tmp_path / "ok.mp4"
+    subprocess.run([ffmpeg_bin(), "-y", "-v", "error", "-loop", "1", "-i", str(_frame_png(tmp_path, "d.png", False)), "-t", "4", "-pix_fmt", "yuv420p", str(ok)], check=True)
+    assert gates.sharp_failures(p, ok, "story-short")[1] == []
+
+
+def test_framed_story_layout_fills_the_frame_with_real_pictures():
+    js = (SKILL / "scripts" / "stage" / "scenes" / "story.js").read_text()
+    assert "0.88 * c.W" in js and "second picture" in js and "st.fcards" in js and "about every 2 s" in js
+
+
+def test_thumbnail_headline_is_always_heavy_and_tiles_keep_a_margin(tmp_path):
+    js = (SKILL / "scripts" / "stage" / "scenes" / "thumbs.js").read_text()
+    assert 'HEAVY = new Set(["Anton", "Archivo Black", "Oswald"])' in js and "'Inter', var(--sans)" in js
+    assert "Special Elite" not in js
+    edge = _road_sidecar([[10, 300, 118, 118], [915, 550, 118, 118]], [GOOD_TEXT])
+    assert _rows(_plain(tmp_path), edge)["tiles inside the frame"]["status"] == "FAIL"          # inside the frame but inside the safe margin too
+
+
+def test_signoff_checklist_asks_about_cut_off_faces():
+    p = Path(__file__)
+    import gates as G
+    assert "No face or head is cut off" in (SKILL / "scripts" / "gates.py").read_text()

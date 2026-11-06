@@ -43,6 +43,7 @@ LIMITS = {
     "words_ok": 6, "words_max": 9,
     "bright": (0.14, 0.82), "range": 0.45, "sat": 0.12, "vivid": 0.01,
     "tile_upscale": 1.5,    # a tile picture is never enlarged past this (shorter side of the original)
+    "tile_margin": 16,      # px at 1280 wide: tiles stay this far from the frame edge
     "tile_gap": 12,         # px at 1280 wide: the least space between a word box and a tile
     "stamp": (0.84, 0.86),   # the bottom-right corner a feed covers with the duration: x and y start, as shares of the frame
     "stamp_edges": 0.06,     # the share of edge pixels allowed in it
@@ -609,8 +610,9 @@ def check_image(path: Path, sidecar: dict | None = None, kind: str = "thumbnail"
         W_ = W / 1280
         tiles, texts_ = (sidecar or {}).get("tiles") or [], (sidecar or {}).get("texts") or []
         rows.append(_row("tiles present", "PASS" if len(tiles) >= 2 else "FAIL", f"{len(tiles)} tiles" + ("" if len(tiles) >= 2 else " (the design needs at least 2 logos or pictures)"), hard=True))
-        out_ = [i for i, b in enumerate(tiles, 1) if b[0] < -1 or b[1] < -1 or b[0] + b[2] > W + 1 or b[1] + b[3] > H + 1]
-        rows.append(_row("tiles inside the frame", "FAIL" if out_ else "PASS", ("tile " + ", ".join(map(str, out_)) + " leaves the frame") if out_ else "every tile is fully inside the frame", hard=True))
+        mg = LIMITS["tile_margin"] * W_
+        out_ = [i for i, b in enumerate(tiles, 1) if b[0] < mg or b[1] < mg or b[0] + b[2] > W - mg or b[1] + b[3] > H - mg]
+        rows.append(_row("tiles inside the frame", "FAIL" if out_ else "PASS", ("tile " + ", ".join(map(str, out_)) + f" is outside the safe margin ({LIMITS['tile_margin']} px at 1280 wide) of the frame edge") if out_ else "every tile is inside the frame with a safe margin", hard=True))
         m = LIMITS["tile_gap"] * W_
         hits = []
         for t in texts_:

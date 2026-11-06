@@ -110,14 +110,20 @@
     if (/calm|slow|soft|narrat|documentary/.test(d)) return 6;
     return 5;
   };
-  const WEAK = /^(the|a|an|of|to|and|or|but|in|on|at|for|your|my|so)$/i;
+  const WEAK = /^(the|a|an|of|to|and|or|but|in|on|at|for|with|your|my|so)$/i;
   L.capGroups = (words, delivery, o = {}) => {
     const limit = o.limit || L.capLimit(delivery), gap = o.gap != null ? o.gap : 0.15, hold = o.hold != null ? o.hold : 0.3;
     const g = [];
     let cur = [];
     const flush = () => { if (cur.length) { g.push(cur); cur = []; } };
     for (const w of words || []) {
-      if (cur.length && w.t0 - cur[cur.length - 1].t1 >= gap) flush();
+      if (cur.length && w.t0 - cur[cur.length - 1].t1 >= gap) {
+        /* a pause never strands a connecting word: "and" alone is not a caption; it travels to the phrase it belongs to */
+        const weakTail = WEAK.test(cur[cur.length - 1].w) && !/[.!?…,;:]["”’)]*$/.test(cur[cur.length - 1].w);
+        if (cur.length === 1 && weakTail) { /* keep it: it opens the next phrase */ }
+        else if (cur.length > 1 && weakTail) { const tail = cur.pop(); flush(); cur.push(tail); }
+        else flush();
+      }
       else if (cur.length >= limit) {
         /* never strand "the" / "a" / "of" at the end of a group: it opens the next one */
         const tail = cur.length > 1 && WEAK.test(cur[cur.length - 1].w) ? cur.pop() : null;

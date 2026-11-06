@@ -35,7 +35,7 @@ SCREENSHOT_HINTS = ("screenshot", "capture", "shots/", "shot-", "browser")
 LABEL_TYPES = {"story", "image", "statement"}            # photos of people and events: a generic picture could be mistaken for the real one
 LABELS = ("archive photo", "illustrative")
 OWN_DIRS = ("assets/shots/", "assets/own/")
-GENERIC = {"image_share_min": 0.35, "image_changes_pm_min": 4, "longest_no_image_max": 45, "text_share_max": 0.5, "image_beats_min": 0.3, "screenshot_of_images_max": 0.8, "photo_share_min": 0.10}
+GENERIC = {"sharp_share_min": 0, "image_share_min": 0.35, "image_changes_pm_min": 4, "longest_no_image_max": 45, "text_share_max": 0.5, "image_beats_min": 0.3, "screenshot_of_images_max": 0.8, "photo_share_min": 0.10}
 
 
 def _paths(obj, out: list) -> None:
@@ -174,12 +174,12 @@ def provenance(project: Path, rows: list[dict]) -> list[str]:
     return out
 
 
-MAX_UPSCALE = 1.5               # a picture is never enlarged past this; below the minimum frame share it is too small for its use
-MIN_FRAME_SHARE = 0.5          # the picture must cover at least this share of the frame width at MAX_UPSCALE
+MAX_UPSCALE = 2.2               # a picture is never enlarged past this; below the minimum frame share it is too small for its use
+MIN_FRAME_SHARE = 0.88          # the picture must cover at least this share of the frame width at MAX_UPSCALE
 
 
 def story_fit(nw: int, nh: int, W: int, H: int) -> dict:
-    """Mirror of L.storyFit in scenes/story.js: full-bleed when sharp enough (cover scale <= 1.3), else a framed card never enlarged past 1.5x."""
+    """Mirror of L.storyFit in scenes/story.js: full-bleed when sharp enough (cover scale <= 1.3), else a framed card (88% of the frame width) never enlarged past 2.2x."""
     cover = max(W / nw, H / nh)
     return {"mode": "bleed", "scale": cover} if cover <= 1.3 else {"mode": "frame", "scale": min(MAX_UPSCALE, cover)}
 
@@ -288,6 +288,56 @@ def check(project: Path, platform: str | None = None, recipe: str | None = None,
     return m, f
 
 
+# ------------------------------------------------------------------ sharp image coverage, measured on the rendered frames
+SHARP_BLOCK, SHARP_T = 24, 6.0          # 24 px blocks of a 540-wide frame; mean gradient above 6 = real picture detail (a blurred backdrop is near 0)
+
+
+def sharp_share_of(png: Path) -> float:
+    """Share of the frame covered by sharp picture detail (not the blurred backdrop, not flat colour)."""
+    import numpy as np
+    from PIL import Image
+    g = np.asarray(Image.open(png).convert("L"), dtype=np.float32)
+    e = np.abs(np.diff(g, axis=1))[:-1, :] + np.abs(np.diff(g, axis=0))[:, :-1]
+    B = SHARP_BLOCK
+    hh, ww = e.shape[0] // B, e.shape[1] // B
+    blk = e[:hh * B, :ww * B].reshape(hh, B, ww, B).mean(axis=(1, 3))
+    return float((blk > SHARP_T).mean())
+
+
+def sharp_coverage(video: Path, scenes: list[dict], work: Path | None = None) -> dict:
+    """Frames at 80% of every scene (540 px wide) -> per-scene and time-weighted mean share of sharp picture. Works on any rendered video."""
+    import shutil
+    import subprocess
+    import tempfile
+    from fvcore import ffmpeg_bin
+    out = []
+    td = Path(tempfile.mkdtemp(prefix="fvsharp-"))
+    try:
+        for i, s in enumerate(scenes):
+            t = s["t0"] + (s["t1"] - s["t0"]) * 0.8
+            f = td / f"{i:03d}.png"
+            subprocess.run([ffmpeg_bin(), "-y", "-v", "error", "-ss", f"{t:.3f}", "-i", str(video), "-frames:v", "1", "-vf", "scale=540:-2", str(f)], check=False)
+            if f.exists():
+                out.append({"id": s["id"], "seconds": s["t1"] - s["t0"], "share": round(sharp_share_of(f), 3)})
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
+    tot = sum(r["seconds"] for r in out) or 1
+    return {"mean": round(sum(r["share"] * r["seconds"] for r in out) / tot, 3), "min": round(min((r["share"] for r in out), default=0), 3), "scenes": out}
+
+
+def sharp_failures(project: Path, video: Path, recipe: str | None = None) -> tuple[dict, list[str]]:
+    g = recipe_gate(recipe or project_config(project)["brief"].get("recipe"))
+    need = g.get("sharp_share_min", 0)
+    scenes, _ = scene_times(project, None)
+    m = sharp_coverage(video, scenes)
+    f = []
+    if need and m["mean"] < need:
+        weak = ", ".join(f"{r['id']} {r['share']:.0%}" for r in sorted(m["scenes"], key=lambda r: r["share"])[:4])
+        f.append(f"sharp picture covers {m['mean']:.0%} of the frame on average; this recipe needs {need:.0%}+ (weakest: {weak}). Make the pictures fill the frame: a bigger or second image, "
+                 "or a full-bleed photo, instead of a small card on a blurred backdrop")
+    return m, f
+
+
 # ------------------------------------------------------------------ word budget per slot (before any voice is generated)
 WPS = 2.3                      # words per second the chatterbox-soft preset really delivers once pauses are counted
 
@@ -350,6 +400,7 @@ def signoff_template(project: Path, platform: str | None = None) -> Path:
              "- [ ] Hero word is 3x the small text; text is inside the safe area and not under the platform UI",
              "- [ ] Captions are legible on the busiest frame",
              "- [ ] No website screenshot is used as thumbnail or cover",
+             "- [ ] No face or head is cut off by a card, a crop view or a tile (there is no face detector: look at every framed picture, both crop views, and every thumbnail tile)",
              "- [ ] Logos or photos shown relate to what the narration says at that moment", "",
              "| scene | t | kind | see | verdict |", "|---|---|---|---|---|"]
     for s in scenes:

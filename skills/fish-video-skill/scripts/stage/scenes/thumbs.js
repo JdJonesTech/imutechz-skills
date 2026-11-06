@@ -216,15 +216,18 @@
      A tile is a brand logo (simple-icons path; the marks belong to their owners) or a licensed picture. Dark glow ground; the
      theme supplies the accent colour and the display font.
      params: tag, title, accent (the big first words), sub (audience line; *word* is marked), tiles [{d, hex, tile, title} | {src}] */
-  const ROAD = [[730, 650], [915, 610], [1140, 500], [960, 395], [745, 300], [960, 185], [1175, 95]];
+  const ROAD = [[730, 625], [915, 600], [1140, 500], [960, 395], [745, 300], [960, 185], [1175, 95]];
   const roadPoints = (n) => {
     if (n >= ROAD.length) return ROAD.slice();
     if (n === 1) return [ROAD[3]];
     return Array.from({ length: n }, (_, i) => ROAD[Math.round((i * (ROAD.length - 1)) / (n - 1))]);
   };
   /* pictures: one big hero tile and up to two smaller ones (design units: 1280x720 landscape, 1080x1920 portrait); logos: a row of small tiles */
-  const PICS_L = [{ x: 790, y: 600, s: 170 }, { x: 930, y: 330, s: 330 }, { x: 1190, y: 115, s: 170 }];
+  const PICS_L = [{ x: 790, y: 600, s: 170 }, { x: 910, y: 330, s: 330 }, { x: 1160, y: 120, s: 160 }];
   const PICS_P = [{ x: 250, y: 1420, s: 290 }, { x: 540, y: 950, s: 470 }, { x: 800, y: 1520, s: 290 }];
+  /* thumbnail type is always heavy: the theme's display face only when it is itself a heavy one, else Inter 900 (never a distressed or light face) */
+  const HEAVY = new Set(["Anton", "Archivo Black", "Oswald"]);
+  const heavyFamily = () => { const d = (L.T && getComputedStyle(document.documentElement).getPropertyValue("--display") || "").split(",")[0].replace(/["']/g, "").trim(); return HEAVY.has(d) ? "var(--display)" : "'Inter', var(--sans)"; };
   const STOP = new Set("a an the of and or but in on at to for with by from as is are was were be been it its this that these those vs".split(" "));
   function road(root, c) {
     const p = c.p, k = c.P ? c.W / 1080 : c.H / 720, W = c.W, Hh = c.H, s = c.safe;
@@ -259,9 +262,9 @@
         const p0 = Q[Math.max(i - 1, 0)], p1 = Q[i], p2 = Q[i + 1], p3 = Q[Math.min(i + 2, Q.length - 1)];
         d += ` C${p1[0] + (p2[0] - p0[0]) / 6} ${p1[1] + (p2[1] - p0[1]) / 6},${p2[0] - (p3[0] - p1[0]) / 6} ${p2[1] - (p3[1] - p1[1]) / 6},${p2[0]} ${p2[1]}`;
       }
-      const g = L.svg("path", { d, fill: "none", stroke: acc, "stroke-width": 40 * k, opacity: 0.6 }, svg); g.style.filter = `blur(${16 * k}px)`;
-      L.svg("path", { d, fill: "none", stroke: "#1a1407", "stroke-width": 38 * k, "stroke-linecap": "round" }, svg);
-      L.svg("path", { d, fill: "none", stroke: acc, "stroke-width": 13 * k, "stroke-linecap": "round" }, svg);
+      const g = L.svg("path", { d, fill: "none", stroke: acc, "stroke-width": 56 * k, opacity: 0.7 }, svg); g.style.filter = `blur(${16 * k}px)`;
+      L.svg("path", { d, fill: "none", stroke: "#1a1407", "stroke-width": 46 * k, "stroke-linecap": "round" }, svg);
+      L.svg("path", { d, fill: "none", stroke: acc, "stroke-width": 19 * k, "stroke-linecap": "round" }, svg);
     }
     spots.forEach((sp) => {
       const t = sp.tile, size = sp.size, ic = size * 0.6;
@@ -275,7 +278,7 @@
     let tg = null;
     if (p.tag) {
       tg = el("div", "abs", root, L.esc(p.tag)); L.pos(tg, c.P ? s.x : 58 * k + ox, c.P ? s.y : 52 * k); tg.dataset.grp = "tag"; tg.dataset.block = "tag";
-      tg.style.cssText += `;background:${acc};color:${L.isDark(acc) ? "#fff" : "#0b0b0e"};font:900 ${40 * k * (c.P ? 1.3 : 1)}px var(--display);letter-spacing:-.01em;padding:${6 * k}px ${20 * k}px ${8 * k}px;border-radius:${12 * k}px;transform:rotate(-1.5deg);white-space:nowrap`;
+      tg.style.cssText += `;background:${acc};color:${L.isDark(acc) ? "#fff" : "#0b0b0e"};font:900 ${40 * k * (c.P ? 1.3 : 1)}px ${heavyFamily()};letter-spacing:-.01em;padding:${6 * k}px ${20 * k}px ${8 * k}px;border-radius:${12 * k}px;transform:rotate(-1.5deg);white-space:nowrap`;
     }
     const words = String(p.title || c.brand.name || "").split(/\s+/).filter(Boolean);
     const norm = (w) => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
@@ -284,27 +287,35 @@
     if (want.length && want.some((w) => !STOP.has(w))) for (let i = 0; i + want.length <= words.length; i++) if (want.every((w, j) => norm(words[i + j]) === w)) { a0 = i; a1 = i + want.length; break; }
     if (a0 < 0) { let best = [0, 0, -1]; for (let i = 0; i < words.length; i++) { let j = i, len = 0; while (j < words.length && !STOP.has(norm(words[j])) && j - i < 3) { len += words[j].length; j++; } if (len > best[2]) best = [i, j, len]; } [a0, a1] = best[2] > 0 ? [best[0], best[1]] : [0, Math.min(words.length, 2)]; }
     const head = el("div", "abs", root); L.pos(head, lx, c.P ? s.y + 120 * k : 112 * k, colW); head.dataset.grp = "head";
-    head.style.cssText += `;color:${ink};font:900 ${124 * k * (c.P ? 1.55 : 1)}px/.93 var(--display);letter-spacing:-.045em;text-transform:uppercase;text-shadow:0 ${6 * k}px ${34 * k}px #000`;
+    head.style.cssText += `;color:${ink};font:900 ${124 * k * (c.P ? 1.55 : 1)}px/.93 ${heavyFamily()};letter-spacing:-.045em;text-transform:uppercase;text-shadow:0 ${6 * k}px ${34 * k}px #000`;
     const line = (txt, big) => `<span class="fv-hl" style="display:block;width:max-content;white-space:nowrap;${big ? `color:${acc};font-size:1.42em;text-shadow:0 0 ${50 * k}px ${L.hexA(acc, 0.35)},0 ${6 * k}px ${30 * k}px #000` : ""}">${L.esc(txt)}</span>`;
-    head.innerHTML = (a0 > 0 ? line(words.slice(0, a0).join(" "), false) : "") + line(words.slice(a0, a1).join(" "), true) + (a1 < words.length ? line(words.slice(a1).join(" "), false) : "");
+    head.innerHTML = (a0 > 0 ? line(words.slice(0, a0).join(" "), false) : "") + (c.P ? line(words.slice(a0, a1).join(" "), true) : words.slice(a0, a1).map((w) => line(w, true)).join("")) + (a1 < words.length ? line(words.slice(a1).join(" "), false) : "");
     const fitHead = () => {
       let px = parseFloat(head.style.fontSize) || 124 * k;
       const wide = () => Math.max(...[...head.querySelectorAll(".fv-hl")].map((e) => e.offsetWidth));
       for (let i = 0; i < 60 && px > 40 * k && wide() > colW; i++) { px *= 0.97; head.style.fontSize = px + "px"; }
     };
-    fitHead(); fits.push(fitHead);
+    const growHead = () => {                                  /* a short headline grows to fill the left column, like the approved design */
+      if (c.P) return;
+      let px = parseFloat(head.style.fontSize) || 124 * k;
+      const target = 0.56 * Hh - parseFloat(head.style.top);
+      const wide = () => Math.max(...[...head.querySelectorAll(".fv-hl")].map((e) => e.offsetWidth));
+      for (let i = 0; i < 40 && head.offsetHeight < target * 0.9 && wide() < colW * 0.96 && px < 210 * k; i++) { px *= 1.04; head.style.fontSize = px + "px"; }
+      if (wide() > colW) fitHead();
+    };
+    fitHead(); growHead(); fits.push(fitHead, growHead);
     const subTxt = String(p.sub || "");
     let subEl = null;
     if (subTxt) {
       subEl = el("div", "abs", root, subTxt.split(/\s+/).map((w) => /^\*.*\*[.,!?]*$/.test(w) ? `<i style="font-style:normal;color:${acc}">${L.esc(w.replace(/\*/g, ""))}</i>` : L.esc(w)).join(" "));
       subEl.dataset.grp = "sub";
       L.pos(subEl, lx + 6 * k, 536 * k);
-      subEl.style.cssText += `;color:#fff;font:800 ${44 * k * (c.P ? 1.3 : 1)}px var(--display);letter-spacing:-.02em;text-transform:uppercase;white-space:nowrap;text-shadow:0 ${4 * k}px ${20 * k}px #000`;
+      subEl.style.cssText += `;color:#fff;font:800 ${44 * k * (c.P ? 1.3 : 1)}px ${heavyFamily()};letter-spacing:-.02em;text-transform:uppercase;white-space:nowrap;text-shadow:0 ${4 * k}px ${20 * k}px #000`;
       fit(subEl, colW + 40 * k, 1, 26 * k);
     }
     const place = () => {
       if (tg) head.style.top = Math.max(parseFloat(head.style.top), tg.offsetTop + tg.offsetHeight + 12 * k) + "px";
-      if (subEl) subEl.style.top = (c.P && pics ? Math.max(Hh * 0.885, head.offsetTop + head.offsetHeight + 22 * k) : Math.max(536 * k, head.offsetTop + head.offsetHeight + 22 * k)) + "px";
+      if (subEl) subEl.style.top = (c.P && pics ? Math.max(Hh * 0.885, head.offsetTop + head.offsetHeight + 22 * k) : head.offsetTop + head.offsetHeight + 26 * k) + "px";
     };
     place();
     fits.push(place);

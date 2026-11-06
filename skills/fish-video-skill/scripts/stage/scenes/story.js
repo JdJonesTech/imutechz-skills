@@ -96,11 +96,11 @@
 
   /* ------------------------------------------------------------ story */
   /* How a picture is shown: full-bleed only when it is sharp enough for the frame (cover scale up to 1.3); otherwise a framed card on a
-     blurred ground, never enlarged past 1.5x. scripts/gates.py mirrors these numbers (story_fit). */
+     blurred ground, never enlarged past 2.2x. scripts/gates.py mirrors these numbers (story_fit). */
   L.storyFit = (nw, nh, W, H) => {
     if (!nw || !nh) return { mode: "bleed", scale: 1 };
     const cover = Math.max(W / nw, H / nh);
-    return cover <= 1.3 ? { mode: "bleed", scale: cover } : { mode: "frame", scale: Math.min(1.5, cover) };
+    return cover <= 1.3 ? { mode: "bleed", scale: cover } : { mode: "frame", scale: Math.min(2.2, cover) };
   };
   S.story = {
     busy: true,
@@ -111,7 +111,7 @@
       const fits = srcs.map((it) => L.storyFit((px[it.src] || [])[0], (px[it.src] || [])[1], c.W, c.H));
       const framed = p.fit === "frame" || p.contain || (p.fit !== "bleed" && fits.some((f) => f.mode === "frame"));
       const bg = el("div", "abs", root); L.pos(bg, 0, 0, c.W, c.H); bg.style.cssText += `;overflow:hidden;background:${framed ? "#101012" : C.bg}`;
-      st.framed = null;
+      st.framed = false;
       srcs.forEach((it, k) => {
         const im = photo(bg, it.src, c, `object-position:${p.pos || "50% 50%"};` + (framed ? "filter:blur(28px) saturate(.8) brightness(.42);transform:scale(1.25)" : `filter:saturate(1.04) contrast(1.02) brightness(${p.bright || 1})`));
         st.imgs.push({ im, t0: k === 0 ? -1 : when(c, it, k, srcs.length, 0.3, c.dur * 0.7) });
@@ -122,16 +122,27 @@
       const capText = [p.label ? String(p.label).toUpperCase() : "", p.caption ? String(p.caption).toUpperCase() : ""].filter(Boolean).join(" · ");
       const capPx = Math.max(24 * u, (c.minPx || 22) + 2);     /* the label meets the same lint as every other text */
       if (framed) {
+        /* A framed picture fills ~88% of the frame width. Spare height below the words gets a second picture (the next `srcs` picture, or a distinct crop
+           of the same one), so no part of the frame is blurred nothing. Both cards swap view (crop or pan) about every 2 s. */
         const nat = px[srcs[0].src] || [0, 0], ar = nat[0] ? nat[0] / nat[1] : p.ar || 1.33;
-        const need = lines.reduce((a, it) => a + ((typeof it === "string" ? 100 : it.size || 100) * 1.35 * u), 0);
-        const maxH = c.safe.h - 150 * u - need - 60 * u;
-        let cw = Math.min(c.safe.w, nat[0] ? nat[0] * 1.5 : c.safe.w), ch = cw / ar;
-        if (ch > maxH) { ch = maxH; cw = ch * ar; }
-        const x0 = c.safe.x + (c.safe.w - cw) / 2, y0 = c.safe.y + 150 * u + Math.max(0, (c.safe.h - 150 * u - ch - 44 * u - need) / 2 - 30 * u);
-        top = y0 + ch + 44 * u; blockH = need; per = need / Math.max(1, lines.length);
-        const card = el("div", "abs", root); L.pos(card, x0, y0, cw, ch);
-        card.style.cssText += `;overflow:hidden;border-radius:${T().radius * 0.4 * u}px;box-shadow:0 ${24 * u}px ${70 * u}px rgba(0,0,0,.7),0 0 0 ${3 * u}px ${C.accent};background:#000`;
-        st.framed = srcs.map((it, k) => ({ im: photo(card, it.src, c, "transform-origin:60% 50%;filter:none"), t0: st.imgs[k].t0 }));
+        const need = lines.reduce((a, it) => a + ((typeof it === "string" ? 100 : it.size || 100) * 1.3 * u), 0), gap = 26 * u;
+        const portrait = ar < 1;                                                 /* a portrait picture is never cropped (no cut-off heads): it is shown whole, narrower */
+        let cw = Math.min(0.88 * c.W, c.safe.w), hA = Math.min(cw / ar, c.safe.h * (portrait ? 0.62 : 0.52));
+        if (portrait) cw = hA * ar;
+        const x0 = c.safe.x + (c.safe.w - cw) / 2, y0 = c.safe.y + 120 * u;
+        const rest = c.safe.h + 300 * u - 120 * u - hA - gap - need - gap;      /* the pictures may run 300 px into the caption reserve: the captions sit on plates over them */
+        const hB = rest >= cw * 0.2 && !(portrait && !srcs[1]) ? Math.min(rest, cw * 1.1) : 0;
+        top = y0 + hA + gap; blockH = need; per = need / Math.max(1, lines.length);
+        const mkCard = (x, y, w, h, views) => {
+          const cd = el("div", "abs", root); L.pos(cd, x, y, w, h);
+          cd.style.cssText += `;overflow:hidden;border-radius:${T().radius * 0.4 * u}px;box-shadow:0 ${24 * u}px ${70 * u}px rgba(0,0,0,.7),0 0 0 ${3 * u}px ${C.accent};background:#000`;
+          const layers = views.map((v) => { const im = photo(cd, v.src, c, `object-position:${v.pos};transform-origin:${v.pos};filter:none`); return { im, v }; });
+          cd.dataset.block = "sharp";
+          return { cd, layers };
+        };
+        const s0 = srcs[0].src, s1 = srcs[1] ? srcs[1].src : s0;
+        st.fcards = [mkCard(x0, y0, cw, hA, [{ src: s0, pos: "50% 40%", z: 1 }, ...(portrait ? [] : [{ src: s0, pos: "40% 40%", z: 1.1 }])])];
+        if (hB) st.fcards.push(mkCard(x0, top + need + gap, cw, hB, [{ src: s1, pos: srcs[1] ? "50% 40%" : "22% 45%", z: 1 }, { src: s1, pos: srcs[1] ? "45% 40%" : "78% 45%", z: srcs[1] ? 1.1 : 1 }]));
         if (capText) { const cp = el("div", "abs", root, L.esc(capText)); L.pos(cp, x0, y0 - capPx * 1.9);
           cp.style.cssText += `;max-width:${cw}px;padding:${5 * u}px ${12 * u}px;background:rgba(8,8,10,.8);color:#f8f6f0;font:700 ${capPx}px/1.15 var(--sans);letter-spacing:.06em;box-sizing:border-box`; }
       } else if (capText) {
@@ -197,8 +208,18 @@
       st.imgs.forEach((x, i) => {
         const a = i === 0 ? 1 : eo(seg(t, x.t0, x.t0 + 0.35));
         x.im.style.opacity = a;
-        if (!st.framed) x.im.style.transform = tf;
-        if (st.framed) st.framed[i].im.style.opacity = a, st.framed[i].im.style.transform = `scale(${1.02 + 0.16 * k})`;
+        if (!st.fcards) x.im.style.transform = tf;
+      });
+      (st.fcards || []).forEach((cd, ci) => {
+        /* view swap about every 2 s (crossfade 0.35 s), with a slow push inside each view */
+        const ph = t / 2, n = Math.floor(ph + ci * 0.5), fr = (ph + ci * 0.5) - n, odd = n % 2 === 1;
+        const x = eo(seg(fr, 0, 0.175));
+        cd.layers.forEach((l, li) => {
+          if (cd.layers.length === 1) { l.im.style.opacity = 1; l.im.style.transform = `scale(${1 + 0.06 * k * T().push})`; return; }
+          const on = li === (odd ? 1 : 0) ? (n === 0 && ci === 0 ? 1 : x) : (n === 0 && ci === 0 ? 0 : 1 - x);
+          l.im.style.opacity = n === 0 && ci === 0 ? (li === 0 ? 1 : 0) : on;
+          l.im.style.transform = `scale(${l.v.z * (1 + 0.06 * k * T().push)})`;
+        });
       });
       st.ln.style.transform = `scaleX(${eo(seg(t, 0, 0.6 / m.speed))})`;
       if (st.k) { const q = eo(seg(t, 0, 0.35)); st.k.style.opacity = q; st.k.style.transform = `translateY(${(1 - q) * -14}px)`; }

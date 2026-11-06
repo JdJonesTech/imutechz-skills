@@ -115,3 +115,13 @@ test("L.capGroups: by delivery, sentence ends and gaps; covers every word in ord
   assert.equal(weak[0].ws.map((w) => w.w).join(" "), "they kept going");
   assert.equal(L.capGroups(said("we kept the rewards coming"), "punchy")[0].ws.map((w) => w.w).join(" "), "we kept", "a weak word opens the next group");
 });
+
+test("L.capGroups: a pause never leaves a lone connecting word as a caption", () => {
+  const ctx = { window: {}, document: { documentElement: { style: { setProperty() {} }, classList: { add() {} } } } };
+  vm.createContext(ctx); vm.runInContext(fs.readFileSync(new URL("../scripts/stage/lib.js", import.meta.url), "utf8"), ctx);
+  const L = ctx.window.L;
+  const words = "The army sent two Lewis guns and 10,000 rounds.".split(" ").map((w, i) => ({ w, t0: i * 0.3 + (i >= 6 ? 0.9 : 0), t1: i * 0.3 + 0.25 + (i >= 6 ? 0.9 : 0) }));
+  const texts = L.capGroups(words, "calm").map((g) => g.ws.map((w) => w.w).join(" "));
+  assert.ok(!texts.includes("and"), texts.join(" | "));
+  assert.ok(texts.every((t) => t.split(" ").length > 1), texts.join(" | "));
+});
