@@ -113,7 +113,7 @@
       const bg = el("div", "abs", root); L.pos(bg, 0, 0, c.W, c.H); bg.style.cssText += `;overflow:hidden;background:${framed ? "#101012" : C.bg}`;
       st.framed = false;
       srcs.forEach((it, k) => {
-        const im = photo(bg, it.src, c, `object-position:${p.pos || "50% 50%"};` + (framed ? "filter:blur(28px) saturate(.8) brightness(.42);transform:scale(1.25)" : `filter:saturate(1.04) contrast(1.02) brightness(${p.bright || 1})`));
+        const im = photo(bg, framed && (p._ground || {})[it.src] ? p._ground[it.src] : it.src, c, `object-position:${p.pos || "50% 50%"};` + (framed ? "filter:blur(28px) saturate(.8) brightness(.42);transform:scale(1.25)" : `filter:saturate(1.04) contrast(1.02) brightness(${p.bright || 1})`));
         st.imgs.push({ im, t0: k === 0 ? -1 : when(c, it, k, srcs.length, 0.3, c.dur * 0.7) });
       });
       /* text zone and the (small) caption strip that tells the viewer what the picture is */

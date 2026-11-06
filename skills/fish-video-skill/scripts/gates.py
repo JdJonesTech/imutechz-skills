@@ -44,6 +44,8 @@ def _paths(obj, out: list) -> None:
             out.append(obj)
     elif isinstance(obj, dict):
         for k, v in obj.items():
+            if str(k).startswith("_"):                          # internal params the build adds (_px sizes, _ground copies) are not pictures a beat shows
+                continue
             if k in ("clip",) and isinstance(v, str):
                 out.append("clip:" + v)
             else:

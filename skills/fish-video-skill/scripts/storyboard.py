@@ -472,11 +472,32 @@ def image_sizes(project: Path, params: dict) -> dict:
     return out
 
 
+def _ground_copies(project: Path, srcs: list[str]) -> dict:
+    """Small copies (480 px) of the pictures for the blurred backdrop: blurring a 2400 px original wastes memory and has crashed the renderer's browser."""
+    out = {}
+    for r in srcs:
+        f = Path(project) / r
+        if not f.exists():
+            continue
+        dst = Path(project) / "assets" / "_ground" / (re.sub(r"[^\w.-]+", "_", r) + ".jpg")
+        try:
+            if not dst.exists() or dst.stat().st_mtime < f.stat().st_mtime:
+                from PIL import Image
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                with Image.open(f) as im:
+                    k = 480 / max(im.size)
+                    (im.convert("RGB").resize((max(1, round(im.width * k)), max(1, round(im.height * k)))) if k < 1 else im.convert("RGB")).save(dst, quality=85)
+            out[r] = str(dst.relative_to(project)).replace("\\", "/")
+        except Exception:                                         # noqa: BLE001 - fall back to the original
+            pass
+    return out
+
+
 def _px_params(project: Path, s: dict) -> dict:
     if s.get("type") not in ("story", "image", "statement"):
         return {}
     px = image_sizes(project, s.get("params") or {})
-    return {"_px": px} if px else {}
+    return {"_px": px, "_ground": _ground_copies(project, list(px))} if px else {}
 
 
 def build(project: Path, *, quiet: bool = False) -> dict:

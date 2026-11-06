@@ -992,3 +992,19 @@ def test_resolution_gate_limits_the_upscale_of_the_default_panel_in_both_directi
 def test_story_panel_never_exceeds_the_upscale_limit_and_shows_one_picture_per_file():
     js = (SKILL / "scripts" / "stage" / "scenes" / "story.js").read_text()
     assert "nat[1] * 2.2" in js and "srcs[1].src !== srcs[0].src" in js and "slow pan" in js
+
+
+def test_internal_build_params_are_not_counted_as_pictures():
+    sc = {"id": "a", "type": "story", "params": {"src": "assets/photo/a.jpg", "_ground": {"assets/photo/a.jpg": "assets/_ground/a.jpg"}, "_px": {"assets/photo/a.jpg": [900, 600]}}}
+    assert gates.classify(sc) == ("image", ["assets/photo/a.jpg"])
+
+
+def test_story_build_adds_small_backdrop_copies_and_sizes(tmp_path):
+    import storyboard as sbm
+    from PIL import Image
+    p = _credited(tmp_path, ["assets/photo/a.jpg"], [GOOD], label="illustrative")
+    Image.new("RGB", (2400, 1800), "#334455").save(p / "assets" / "photo" / "a.jpg")
+    prm = sbm._px_params(p, {"type": "story", "params": {"src": "assets/photo/a.jpg"}})
+    assert prm["_px"]["assets/photo/a.jpg"] == [2400, 1800]
+    g = Image.open(p / prm["_ground"]["assets/photo/a.jpg"])
+    assert max(g.size) == 480

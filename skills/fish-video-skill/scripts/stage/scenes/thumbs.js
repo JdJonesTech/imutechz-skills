@@ -298,7 +298,7 @@
     const growHead = () => {                                  /* a short headline grows to fill the left column, like the approved design */
       if (c.P) return;
       let px = parseFloat(head.style.fontSize) || 124 * k;
-      const target = 0.56 * Hh - parseFloat(head.style.top);
+      const target = Math.min(0.56 * Hh, 0.86 * Hh - 96 * k) - parseFloat(head.style.top);        /* room is kept below for the audience line */
       const wide = () => Math.max(...[...head.querySelectorAll(".fv-hl")].map((e) => e.offsetWidth));
       for (let i = 0; i < 40 && head.offsetHeight < target * 0.9 && wide() < colW * 0.96 && px < 210 * k; i++) { px *= 1.04; head.style.fontSize = px + "px"; }
       if (wide() > colW) fitHead();
@@ -311,7 +311,8 @@
       subEl.dataset.grp = "sub";
       L.pos(subEl, lx + 6 * k, 536 * k);
       subEl.style.cssText += `;color:#fff;font:800 ${44 * k * (c.P ? 1.3 : 1)}px ${heavyFamily()};letter-spacing:-.02em;text-transform:uppercase;white-space:nowrap;text-shadow:0 ${4 * k}px ${20 * k}px #000`;
-      fit(subEl, colW + 40 * k, 1, 26 * k);
+      const fitSub = () => { let px = parseFloat(subEl.style.fontSize) || 44 * k; for (let i = 0; i < 40 && px > 24 * k && subEl.offsetWidth > colW - 6 * k; i++) { px *= 0.96; subEl.style.fontSize = px + "px"; } };
+      fitSub(); fits.push(fitSub);
     }
     const place = () => {
       if (tg) head.style.top = Math.max(parseFloat(head.style.top), tg.offsetTop + tg.offsetHeight + 12 * k) + "px";

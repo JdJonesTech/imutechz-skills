@@ -291,6 +291,25 @@ PROVIDERS = {"pexels": (_pexels, ("photo", "video")), "pixabay": (_pixabay, ("ph
 TAKES_OPTS = {"wikimedia", "archive"}       # providers that understand before= (a year) and lang=
 
 
+MAX_PHOTO_SIDE = 2400      # a downloaded photo is kept at most this many px on its long side: the renderer decodes every picture, and a 47-megapixel original stalls the browser
+
+
+def limit_size(path: Path, max_side: int = MAX_PHOTO_SIDE) -> tuple[int, int] | None:
+    """Shrink a photo in place when its long side exceeds `max_side` (never enlarges). Returns the original size when it shrank."""
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            w, h = im.size
+            if max(w, h) <= max_side:
+                return None
+            k = max_side / max(w, h)
+            small = im.convert("RGB").resize((round(w * k), round(h * k)), Image.LANCZOS)
+        small.save(path, quality=92)
+        return (w, h)
+    except Exception:                                              # noqa: BLE001 - an unreadable file is reported by the gate
+        return None
+
+
 # ------------------------------------------------------------------ search / get
 def search_providers(q: str, kind: str, providers=None, n: int = 12, unverified: bool = False, **opts) -> list[dict]:
     """Query providers (no disk writes). Drops NC/ND/unknown licences. Soft-fails per provider.
@@ -419,7 +438,10 @@ def get(project, candidate_ids, accept_risk: bool = False) -> list[Path]:
         except FishError as e:
             warn(f"{cid}: {e}")
             continue
+        orig = limit_size(dest) if kind == "photo" else None
         rec = {k: v for k, v in r.items() if k not in ("preview_file", "collection_url", "filetype", "identifier")}
+        if orig:
+            rec["original_size"] = list(orig)
         rec["file"] = str(dest.relative_to(project)).replace("\\", "/")
         rec["credit"] = fvnet.credit_line(rec)
         added = add_credit(project, rec)
@@ -734,7 +756,13 @@ def source(project, query: str, beat: str | None = None, n: int = 1, providers=N
     if not safe:
         raise FishError(f"no result for '{query}' has a licence the API confirms (providers: {', '.join(prov)}). Try other words, add --providers, or "
                         "make the beat a drawn graphic. Nothing is used with an unconfirmed licence.")
-    files = get(project, [c["id"] for c in safe[:n]])
+    files: list[Path] = []
+    for c in safe:                                                   # a result whose download fails (too large, gone) is skipped for the next one
+        if len(files) >= n:
+            break
+        files += get(project, [c["id"]])
+    if not files:
+        raise FishError(f"none of the {len(safe)} licence-confirmed results for '{query}' could be downloaded (too large or unavailable). Try other words or another provider.")
     idx = {r["file"]: r for r in load_credits(project)}
     out = []
     for f in files:
