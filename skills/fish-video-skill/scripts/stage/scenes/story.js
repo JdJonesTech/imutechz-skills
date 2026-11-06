@@ -122,27 +122,28 @@
       const capText = [p.label ? String(p.label).toUpperCase() : "", p.caption ? String(p.caption).toUpperCase() : ""].filter(Boolean).join(" · ");
       const capPx = Math.max(24 * u, (c.minPx || 22) + 2);     /* the label meets the same lint as every other text */
       if (framed) {
-        /* A framed picture fills ~88% of the frame width. Spare height below the words gets a second picture (the next `srcs` picture, or a distinct crop
-           of the same one), so no part of the frame is blurred nothing. Both cards swap view (crop or pan) about every 2 s. */
+        /* ONE large panel (about 88% of the width, 50-58% of the height), cover-cropped, with a slow pan and push so the view changes over the beat.
+           The words sit directly below it on the backdrop. A second panel exists only for a DIFFERENT picture file assigned to this beat: the same
+           file is never shown twice. A portrait picture gets a tall panel and is not cropped (no cut-off heads). Upscale stays within 2.2x. */
         const nat = px[srcs[0].src] || [0, 0], ar = nat[0] ? nat[0] / nat[1] : p.ar || 1.33;
         const need = lines.reduce((a, it) => a + ((typeof it === "string" ? 100 : it.size || 100) * 1.3 * u), 0), gap = 26 * u;
-        const portrait = ar < 1;                                                 /* a portrait picture is never cropped (no cut-off heads): it is shown whole, narrower */
-        let cw = Math.min(0.88 * c.W, c.safe.w), hA = Math.min(cw / ar, c.safe.h * (portrait ? 0.62 : 0.52));
-        if (portrait) cw = hA * ar;
-        const x0 = c.safe.x + (c.safe.w - cw) / 2, y0 = c.safe.y + 120 * u;
-        const rest = c.safe.h + 300 * u - 120 * u - hA - gap - need - gap;      /* the pictures may run 300 px into the caption reserve: the captions sit on plates over them */
-        const hB = rest >= cw * 0.2 && !(portrait && !srcs[1]) ? Math.min(rest, cw * 1.1) : 0;
-        top = y0 + hA + gap; blockH = need; per = need / Math.max(1, lines.length);
-        const mkCard = (x, y, w, h, views) => {
-          const cd = el("div", "abs", root); L.pos(cd, x, y, w, h);
+        const second = srcs.length > 1 && srcs[1].src && srcs[1].src !== srcs[0].src ? srcs[1] : null;
+        const portrait = ar < 1, cwMax = Math.min(0.88 * c.W, c.safe.w), y0 = c.safe.y + 120 * u;
+        const room = c.safe.y + c.safe.h - y0 - gap - need - 8 * u;           /* the panel and the words below it end inside the safe area */
+        let cw, hA;
+        if (portrait) { hA = Math.min(c.H * 0.52, room); cw = Math.min(cwMax, hA * ar); hA = cw / ar; }
+        else { cw = cwMax; hA = Math.min(c.H * 0.54, room); if (nat[1]) hA = Math.min(hA, Math.max(nat[1] * 2.2, cw / ar)); }
+        const x0 = c.safe.x + (c.safe.w - cw) / 2;
+        const mkCard = (x, y, w, h, src, dir, vertical) => {
+          const cd = el("div", "abs", root); L.pos(cd, x, y, w, h); cd.dataset.block = "sharp"; cd.dataset.src = src;
           cd.style.cssText += `;overflow:hidden;border-radius:${T().radius * 0.4 * u}px;box-shadow:0 ${24 * u}px ${70 * u}px rgba(0,0,0,.7),0 0 0 ${3 * u}px ${C.accent};background:#000`;
-          const layers = views.map((v) => { const im = photo(cd, v.src, c, `object-position:${v.pos};transform-origin:${v.pos};filter:none`); return { im, v }; });
-          cd.dataset.block = "sharp";
-          return { cd, layers };
+          return { cd, im: photo(cd, src, c, "filter:none"), dir, vertical };
         };
-        const s0 = srcs[0].src, s1 = srcs[1] ? srcs[1].src : s0;
-        st.fcards = [mkCard(x0, y0, cw, hA, [{ src: s0, pos: "50% 40%", z: 1 }, ...(portrait ? [] : [{ src: s0, pos: "40% 40%", z: 1.1 }])])];
-        if (hB) st.fcards.push(mkCard(x0, top + need + gap, cw, hB, [{ src: s1, pos: srcs[1] ? "50% 40%" : "22% 45%", z: 1 }, { src: s1, pos: srcs[1] ? "45% 40%" : "78% 45%", z: srcs[1] ? 1.1 : 1 }]));
+        top = y0 + hA + gap; blockH = need; per = need / Math.max(1, lines.length);
+        const par = (c.index || 0) % 2 ? -1 : 1;
+        st.fcards = [mkCard(x0, y0, cw, hA, srcs[0].src, par, portrait)];
+        const bTop = top + need + gap, hB = second ? Math.min(c.safe.y + c.safe.h - bTop, cw * 0.9) : 0;
+        if (second && hB > cw * 0.25) st.fcards.push(mkCard(x0, bTop, cw, hB, second.src, -par, false));
         if (capText) { const cp = el("div", "abs", root, L.esc(capText)); L.pos(cp, x0, y0 - capPx * 1.9);
           cp.style.cssText += `;max-width:${cw}px;padding:${5 * u}px ${12 * u}px;background:rgba(8,8,10,.8);color:#f8f6f0;font:700 ${capPx}px/1.15 var(--sans);letter-spacing:.06em;box-sizing:border-box`; }
       } else if (capText) {
@@ -210,16 +211,12 @@
         x.im.style.opacity = a;
         if (!st.fcards) x.im.style.transform = tf;
       });
-      (st.fcards || []).forEach((cd, ci) => {
-        /* view swap about every 2 s (crossfade 0.35 s), with a slow push inside each view */
-        const ph = t / 2, n = Math.floor(ph + ci * 0.5), fr = (ph + ci * 0.5) - n, odd = n % 2 === 1;
-        const x = eo(seg(fr, 0, 0.175));
-        cd.layers.forEach((l, li) => {
-          if (cd.layers.length === 1) { l.im.style.opacity = 1; l.im.style.transform = `scale(${1 + 0.06 * k * T().push})`; return; }
-          const on = li === (odd ? 1 : 0) ? (n === 0 && ci === 0 ? 1 : x) : (n === 0 && ci === 0 ? 0 : 1 - x);
-          l.im.style.opacity = n === 0 && ci === 0 ? (li === 0 ? 1 : 0) : on;
-          l.im.style.transform = `scale(${l.v.z * (1 + 0.06 * k * T().push)})`;
-        });
+      (st.fcards || []).forEach((cd) => {
+        /* a slow pan across the picture and a gentle push: the view keeps changing for the whole beat */
+        const e = eo(k), pos = cd.dir > 0 ? 18 + 64 * e : 82 - 64 * e;
+        cd.im.style.objectPosition = cd.vertical ? `50% ${10 + 25 * e}%` : `${pos}% 40%`;
+        cd.im.style.transformOrigin = "50% 40%";
+        cd.im.style.transform = `scale(${1 + 0.1 * k * T().push})`;
       });
       st.ln.style.transform = `scaleX(${eo(seg(t, 0, 0.6 / m.speed))})`;
       if (st.k) { const q = eo(seg(t, 0, 0.35)); st.k.style.opacity = q; st.k.style.transform = `translateY(${(1 - q) * -14}px)`; }

@@ -919,7 +919,7 @@ def test_sharp_failure_names_the_weak_scenes_for_a_video(tmp_path):
 
 def test_framed_story_layout_fills_the_frame_with_real_pictures():
     js = (SKILL / "scripts" / "stage" / "scenes" / "story.js").read_text()
-    assert "0.88 * c.W" in js and "second picture" in js and "st.fcards" in js and "about every 2 s" in js
+    assert "0.88 * c.W" in js and "ONE large panel" in js and "DIFFERENT picture file" in js and "slow pan" in js and "the same\n           file is never shown twice" in js
 
 
 def test_thumbnail_headline_is_always_heavy_and_tiles_keep_a_margin(tmp_path):
@@ -934,3 +934,61 @@ def test_signoff_checklist_asks_about_cut_off_faces():
     p = Path(__file__)
     import gates as G
     assert "No face or head is cut off" in (SKILL / "scripts" / "gates.py").read_text()
+
+
+def _stack_png(tmp_path, name, same):
+    import numpy as np
+    from PIL import Image, ImageFilter
+    rng = np.random.default_rng(11)
+    def pic(seed):
+        r = np.random.default_rng(seed)
+        base = np.kron(r.normal(128, 55, (24, 14, 3)), np.ones((10, 10, 1)))
+        return Image.fromarray(np.clip(base + r.normal(0, 14, base.shape), 0, 255).astype("uint8"))
+    a = pic(1)
+    b = a if same else pic(2)
+    frame = Image.new("RGB", (540, 960), (50, 50, 50)).filter(ImageFilter.GaussianBlur(2))
+    frame.paste(a.resize((470, 330)), (35, 110))
+    frame.paste(b.resize((470, 330)), (35, 540))
+    f = tmp_path / name
+    frame.save(f)
+    return f
+
+
+def test_the_same_picture_twice_is_flagged_and_counted_once(tmp_path):
+    dup = gates.panel_analysis(_stack_png(tmp_path, "dup.png", True))
+    ok = gates.panel_analysis(_stack_png(tmp_path, "ok.png", False))
+    assert dup["duplicates"] and not ok["duplicates"]
+    assert dup["share"] < dup["raw"] * 0.7 and ok["share"] == ok["raw"]          # the repeat adds no unique area
+    assert gates.DUP_SIMILARITY == 0.65
+
+
+def test_a_beat_may_not_list_the_same_picture_twice(tmp_path):
+    from PIL import Image
+    p = _credited(tmp_path, ["assets/photo/a.jpg"], [GOOD], label="illustrative")
+    import shutil as sh
+    sh.copy(p / "assets" / "photo" / "a.jpg", p / "assets" / "photo" / "b.jpg")
+    sb = load_yaml(p / "storyboard.yaml")
+    sb["scenes"][0]["params"]["srcs"] = [{"src": "assets/photo/a.jpg"}, {"src": "assets/photo/b.jpg"}]
+    save_yaml(p / "storyboard.yaml", sb)
+    f = gates.check(p)[1]
+    assert any("same picture" in x and "assets source" in x for x in f)
+    import numpy as np
+    Image.fromarray(np.random.default_rng(2).integers(0, 255, (600, 900, 3), dtype=np.uint8)).save(p / "assets" / "photo" / "b.jpg")
+    Image.fromarray(np.random.default_rng(3).integers(0, 255, (600, 900, 3), dtype=np.uint8)).save(p / "assets" / "photo" / "a.jpg")
+    assert not any("same picture" in x for x in gates.check(p)[1])
+
+
+def test_resolution_gate_limits_the_upscale_of_the_default_panel_in_both_directions(tmp_path):
+    from PIL import Image
+    p = _credited(tmp_path, ["assets/photo/a.jpg"], [GOOD], label="illustrative")
+    Image.new("RGB", (450, 299), "#445566").save(p / "assets" / "photo" / "a.jpg")                 # wide enough (2.1x) but too short for a half-height panel (3.2x)
+    f = gates.resolution(p, gates.measure(p)["rows"])
+    assert f and "3.2x" in f[0] and "2.2x" in f[0] and "--min-height" in f[0]
+    Image.new("RGB", (450, 450), "#445566").save(p / "assets" / "photo" / "a.jpg")
+    assert gates.resolution(p, gates.measure(p)["rows"]) == []
+    assert gates.min_native_height(1920) == 436 and gates.min_native_width(1080) == 431
+
+
+def test_story_panel_never_exceeds_the_upscale_limit_and_shows_one_picture_per_file():
+    js = (SKILL / "scripts" / "stage" / "scenes" / "story.js").read_text()
+    assert "nat[1] * 2.2" in js and "srcs[1].src !== srcs[0].src" in js and "slow pan" in js

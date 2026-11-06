@@ -690,7 +690,7 @@ def _used_files(project: Path, except_beat: str | None) -> set[str]:
 
 
 def source(project, query: str, beat: str | None = None, n: int = 1, providers=None, kind: str = "photo", depicts: str | None = None,
-           before: int | None = None, min_width: int | None = None) -> list[dict]:
+           before: int | None = None, min_width: int | None = None, min_height: int | None = None) -> list[dict]:
     """Search Commons, NASA, the Library of Congress (and Pexels/Pixabay when their keys are set), keep only results whose licence the API
     confirms, download the best `n`, write source, licence and author to assets/credits.json (so they reach every post text and the
     metadata), and point the beat at the file. `depicts` says the picture truly shows that person or event (label: archive photo);
@@ -713,15 +713,20 @@ def source(project, query: str, beat: str | None = None, n: int = 1, providers=N
                 min_width = gates.min_native_width(gates.frame_size(project, None)[0])
             except Exception:                                         # noqa: BLE001 - no platform yet: a sane default
                 min_width = 540
-        big = [c for c in safe if (c.get("width") or 0) >= min_width]
-        small = [c for c in safe if (c.get("width") or 0) < min_width and c.get("width")]
+        if min_height is None:
+            try:
+                min_height = gates.min_native_height(gates.frame_size(project, None)[1])
+            except Exception:                                         # noqa: BLE001
+                min_height = 0
+        big = [c for c in safe if (c.get("width") or 0) >= min_width and (c.get("height") or 10 ** 6) >= min_height]
+        small = [c for c in safe if c.get("width") and ((c.get("width") or 0) < min_width or (c.get("height") or 10 ** 6) < min_height)]
         unknown = [c for c in safe if not c.get("width")]
         if big or unknown:                                           # sharp enough first, biggest first; undersized ones are dropped, not down-ranked into use
             safe = sorted(big, key=lambda c: -(c.get("width") or 0)) + unknown
             if small:
                 warn(f"{len(small)} result(s) under {min_width}px wide were skipped: they would render muddy")
         else:
-            raise FishError(f"every licence-confirmed result for '{query}' is narrower than {min_width}px (largest {max(c['width'] for c in small)}px): it would render blurry. Try other words or --min-width to accept smaller.")
+            raise FishError(f"every licence-confirmed result for '{query}' is too small (under {min_width}x{min_height}px; largest {max(c['width'] for c in small)}px): it would render blurry. Try other words or --min-width to accept smaller.")
     used = _used_files(project, beat)
     fresh = [c for c in safe if Path(c["id"]).stem not in used]
     if fresh or not used:
@@ -810,7 +815,7 @@ def cli(argv=None) -> int:
     a = sp.add_parser("sfx-pack"); a.add_argument("dest", nargs="?")
     a = sp.add_parser("source"); a.add_argument("project"); a.add_argument("q"); a.add_argument("--beat"); a.add_argument("-n", type=int, default=1)
     a.add_argument("--providers"); a.add_argument("--depicts", help="say the picture truly shows this person or event: the beat is labelled `archive photo` instead of `illustrative`")
-    a.add_argument("--before", type=int); a.add_argument("--min-width", type=int, help="skip results narrower than this many px (default: half a frame at 1.5x)")
+    a.add_argument("--before", type=int); a.add_argument("--min-width", type=int, help="skip results narrower than this many px (default: the panel width at 2.2x)"); a.add_argument("--min-height", type=int, help="skip results shorter than this many px (default: half the frame height at 2.2x)")
     a = sp.add_parser("adopt"); a.add_argument("project"); a.add_argument("--license", required=True); a.add_argument("--author", required=True)
     a.add_argument("--source", required=True); a.add_argument("--label", choices=["archive photo", "illustrative"])
     a = sp.add_parser("plan"); a.add_argument("project")
@@ -839,7 +844,7 @@ def cli(argv=None) -> int:
     elif ns.cmd == "sfx-pack":
         sfx_pack(ns.dest)
     elif ns.cmd == "source":
-        got = source(ns.project, ns.q, ns.beat, ns.n, ns.providers.split(",") if ns.providers else None, depicts=ns.depicts, before=ns.before, min_width=ns.min_width)
+        got = source(ns.project, ns.q, ns.beat, ns.n, ns.providers.split(",") if ns.providers else None, depicts=ns.depicts, before=ns.before, min_width=ns.min_width, min_height=ns.min_height)
         return 0 if got else 1
     elif ns.cmd == "adopt":
         adopt(ns.project, ns.license, ns.author, ns.source, ns.label)

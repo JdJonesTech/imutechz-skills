@@ -184,8 +184,15 @@ def story_fit(nw: int, nh: int, W: int, H: int) -> dict:
     return {"mode": "bleed", "scale": cover} if cover <= 1.3 else {"mode": "frame", "scale": min(MAX_UPSCALE, cover)}
 
 
+PANEL_HEIGHT_SHARE = 0.5        # the default panel is about half the frame tall (50-58%)
+
+
 def min_native_width(W: int) -> int:
     return int(MIN_FRAME_SHARE * W / MAX_UPSCALE)
+
+
+def min_native_height(H: int) -> int:
+    return int(PANEL_HEIGHT_SHARE * H / MAX_UPSCALE)
 
 
 def frame_size(project: Path, platform: str | None) -> tuple[int, int]:
@@ -225,8 +232,41 @@ def resolution(project: Path, rows: list[dict], platform: str | None = None) -> 
             except Exception:                                                         # noqa: BLE001
                 out.append(f"beat {r['id']}: {x} cannot be read as a picture (corrupt or not an image). Fetch it again: fishvideo assets source <dir> \"<query>\" --beat {r['id']}")
                 continue
-            if nw < need:
-                out.append(f"beat {r['id']}: {x} is {nw}x{nh}, too small for a {W}x{H} frame (it would render {W * MIN_FRAME_SHARE / nw:.1f}x enlarged to fill half the width; needs {need}+ px wide). Fetch a larger one: fishvideo assets source <dir> \"<query>\" --beat {r['id']} --min-width {need}")
+            need_h = min_native_height(H)
+            if nw < need or nh < need_h:
+                out.append(f"beat {r['id']}: {x} is {nw}x{nh}, too small for its panel in a {W}x{H} frame (an 88% x {PANEL_HEIGHT_SHARE:.0%} panel would enlarge it "
+                           f"{max(W * MIN_FRAME_SHARE / nw, H * PANEL_HEIGHT_SHARE / nh):.1f}x; the limit is {MAX_UPSCALE}x, which needs {need}x{need_h} px or more). "
+                           f"Fetch a larger one: fishvideo assets source <dir> \"<query>\" --beat {r['id']} --min-width {need} --min-height {need_h}")
+    return out
+
+
+def duplicate_srcs(project: Path, rows: list[dict]) -> list[str]:
+    """A beat must never list the same picture twice (same path, or two files with the same picture): a second panel needs a DIFFERENT picture."""
+    from PIL import Image
+    import numpy as np
+    project = Path(project)
+    out = []
+    for r in rows:
+        if r["kind"] != "image" or r["type"] not in LABEL_TYPES or len(r["srcs"]) < 2:
+            continue
+        paths = [x for x in r["srcs"] if x.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))]
+        if len(set(paths)) < len(paths):
+            out.append(f"beat {r['id']}: the same picture is listed twice. A second panel needs a different picture file: fishvideo assets source <dir> \"<query>\" --beat {r['id']}")
+            continue
+        hs = []
+        for x in paths:
+            f = project / x
+            if f.exists():
+                try:
+                    with Image.open(f) as im:
+                        a = np.asarray(im.convert("L").resize((16, 16)), dtype=np.float32)
+                    hs.append((x, a > a.mean()))
+                except Exception:                                                            # noqa: BLE001
+                    pass
+        for i in range(len(hs)):
+            for j in range(i + 1, len(hs)):
+                if int((hs[i][1] != hs[j][1]).sum()) <= 12:
+                    out.append(f"beat {r['id']}: {hs[i][0]} and {hs[j][0]} are the same picture. A second panel needs a different picture: fishvideo assets source <dir> \"<query>\" --beat {r['id']}")
     return out
 
 
@@ -281,7 +321,7 @@ def check(project: Path, platform: str | None = None, recipe: str | None = None,
         sbf = project / "storyboard.yaml"
         params = {s["id"]: s.get("params") or {} for s in (load_yaml(sbf).get("scenes") or [])} if sbf.exists() else {}
         pv, rs, lb = provenance(project, m["rows"]), resolution(project, m["rows"], platform), labels(project, params, m["rows"])
-        f += pv + rs + lb
+        f += pv + rs + lb + duplicate_srcs(project, m["rows"])
         if pv or lb:
             f.append(f"EXISTING PROJECT? {len(pv)} image(s) lack a credit record and {len(lb)} beat(s) lack a label: nothing was changed. If the pictures really come from where you say, record them in one command: "
                      f"`fishvideo assets adopt {project.name} --license \"<licence>\" --author \"<author>\" --source <url> --label illustrative` (you are asserting those facts; per-file records via `assets source` are better)")
@@ -292,16 +332,82 @@ def check(project: Path, platform: str | None = None, recipe: str | None = None,
 SHARP_BLOCK, SHARP_T = 24, 6.0          # 24 px blocks of a 540-wide frame; mean gradient above 6 = real picture detail (a blurred backdrop is near 0)
 
 
-def sharp_share_of(png: Path) -> float:
-    """Share of the frame covered by sharp picture detail (not the blurred backdrop, not flat colour)."""
+def _sharp_mask(png: Path):
     import numpy as np
     from PIL import Image
-    g = np.asarray(Image.open(png).convert("L"), dtype=np.float32)
+    im = Image.open(png).convert("L")
+    g = np.asarray(im, dtype=np.float32)
     e = np.abs(np.diff(g, axis=1))[:-1, :] + np.abs(np.diff(g, axis=0))[:, :-1]
     B = SHARP_BLOCK
     hh, ww = e.shape[0] // B, e.shape[1] // B
-    blk = e[:hh * B, :ww * B].reshape(hh, B, ww, B).mean(axis=(1, 3))
-    return float((blk > SHARP_T).mean())
+    return g, (e[:hh * B, :ww * B].reshape(hh, B, ww, B).mean(axis=(1, 3)) > SHARP_T)
+
+
+def _components(mask, min_blocks: int = 40) -> list[list[tuple[int, int]]]:
+    seen = mask.copy() * False
+    out = []
+    for y in range(mask.shape[0]):
+        for x in range(mask.shape[1]):
+            if mask[y, x] and not seen[y, x]:
+                stack, cells = [(y, x)], []
+                seen[y, x] = True
+                while stack:
+                    cy, cx = stack.pop()
+                    cells.append((cy, cx))
+                    for ny, nx in ((cy + 1, cx), (cy - 1, cx), (cy, cx + 1), (cy, cx - 1)):
+                        if 0 <= ny < mask.shape[0] and 0 <= nx < mask.shape[1] and mask[ny, nx] and not seen[ny, nx]:
+                            seen[ny, nx] = True
+                            stack.append((ny, nx))
+                if len(cells) >= min_blocks:
+                    out.append(cells)
+    return out
+
+
+DUP_SIMILARITY = 0.65           # tuned: stacked duplicate panels measured 0.53-0.89 (mostly 0.66+), the Onoda v2 frames never above 0.61
+
+
+def panel_analysis(png: Path, sim: float = DUP_SIMILARITY) -> dict:
+    """The sharp picture of one frame: {share (unique area), raw (all sharp area), duplicates: [(split, similarity)]}.
+    The frame's sharp area is cut in two at every plausible row (stacked panels, the words between them); when the two
+    halves, downscaled to grey 32x32, correlate above `sim`, the same picture is on screen twice (whatever the crop or pan) and the
+    repeat's area is not counted."""
+    import numpy as np
+    from PIL import Image
+    g, mask = _sharp_mask(png)
+    B = SHARP_BLOCK
+    raw = float(mask.mean())
+    if not mask.any():
+        return {"share": 0.0, "raw": 0.0, "duplicates": [], "panels": 0}
+    ys, xs = np.nonzero(mask)
+    y0, y1, x0, x1 = int(ys.min()), int(ys.max()) + 1, int(xs.min()), int(xs.max()) + 1
+
+    def vec(a, b, c, d):
+        if b - a < 3 or d - c < 3:
+            return None
+        v = np.asarray(Image.fromarray(g[a * B:b * B, c * B:d * B].astype("uint8")).resize((32, 32)), dtype=np.float32).ravel()
+        return (v - v.mean()) / (v.std() + 1e-6)
+    best = (0.0, None)
+    if y1 - y0 >= 12:                                                         # stacked: split rows
+        for r in range(y0 + (y1 - y0) // 3, y0 + 2 * (y1 - y0) // 3 + 1):
+            for gap in (0, 2, 4):
+                top, bot = vec(y0, r - gap // 2, x0, x1), vec(r + gap - gap // 2, y1, x0, x1)
+                if top is not None and bot is not None:
+                    c = float(np.dot(top, bot) / len(top))
+                    if c > best[0]:
+                        best = (c, ("rows", r))
+    dups = [(best[1], round(best[0], 2))] if best[0] >= sim else []
+    share = raw
+    if dups:
+        kind, at = dups[0][0]
+        rep = mask.copy() * False
+        rep[at:y1, x0:x1] = mask[at:y1, x0:x1]
+        share = float((mask & ~rep).mean())
+    return {"share": share, "raw": raw, "duplicates": dups, "panels": 2 if dups else 1}
+
+
+def sharp_share_of(png: Path) -> float:
+    """Share of the frame covered by UNIQUE sharp picture detail: not the blurred backdrop, not flat colour, and a panel that repeats another panel counts once."""
+    return panel_analysis(png)["share"]
 
 
 def sharp_coverage(video: Path, scenes: list[dict], work: Path | None = None) -> dict:
@@ -318,11 +424,12 @@ def sharp_coverage(video: Path, scenes: list[dict], work: Path | None = None) ->
             f = td / f"{i:03d}.png"
             subprocess.run([ffmpeg_bin(), "-y", "-v", "error", "-ss", f"{t:.3f}", "-i", str(video), "-frames:v", "1", "-vf", "scale=540:-2", str(f)], check=False)
             if f.exists():
-                out.append({"id": s["id"], "seconds": s["t1"] - s["t0"], "share": round(sharp_share_of(f), 3)})
+                a = panel_analysis(f)
+                out.append({"id": s["id"], "seconds": s["t1"] - s["t0"], "share": round(a["share"], 3), "duplicates": len(a["duplicates"])})
     finally:
         shutil.rmtree(td, ignore_errors=True)
     tot = sum(r["seconds"] for r in out) or 1
-    return {"mean": round(sum(r["share"] * r["seconds"] for r in out) / tot, 3), "min": round(min((r["share"] for r in out), default=0), 3), "scenes": out}
+    return {"mean": round(sum(r["share"] * r["seconds"] for r in out) / tot, 3), "min": round(min((r["share"] for r in out), default=0), 3), "duplicates": [r["id"] for r in out if r["duplicates"]], "scenes": out}
 
 
 def sharp_failures(project: Path, video: Path, recipe: str | None = None) -> tuple[dict, list[str]]:
@@ -331,6 +438,8 @@ def sharp_failures(project: Path, video: Path, recipe: str | None = None) -> tup
     scenes, _ = scene_times(project, None)
     m = sharp_coverage(video, scenes)
     f = []
+    if m["duplicates"]:
+        f.append(f"near-identical panels on screen at once in {', '.join(m['duplicates'][:6])}: the same picture is shown twice. Use ONE panel per beat, or give the beat a second DIFFERENT picture file (assets source <dir> \"<query>\" --beat <id>)")
     if need and m["mean"] < need:
         weak = ", ".join(f"{r['id']} {r['share']:.0%}" for r in sorted(m["scenes"], key=lambda r: r["share"])[:4])
         f.append(f"sharp picture covers {m['mean']:.0%} of the frame on average; this recipe needs {need:.0%}+ (weakest: {weak}). Make the pictures fill the frame: a bigger or second image, "
