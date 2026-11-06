@@ -5,7 +5,9 @@
 #   roadmap-explainer  <- the long GenAI roadmap video (555 s: 44% images, 13 new images/min, 36% text cards)
 #   story-short        <- the two Onoda Shorts (26 s: photo-led frames, 14 new images/min)
 #   bold-short         <- the bold typographic Short (all drawn shapes, huge words, no photographs)
-# The gate keys: image_share_min, image_changes_pm_min, longest_no_image_max (s), text_share_max, graphic_share_min.
+# The gate keys: image_share_min, image_beats_min (share of beats with a real image), image_changes_pm_min, longest_no_image_max (s), text_share_max,
+# graphic_share_min, screenshot_of_images_max (a site screenshot may not be the main visual). Every image must also exist, carry source, licence and author in
+# assets/credits.json, and photos of people or events need `label: archive photo|illustrative`. Opt-out only on the user's request: visuals: {mode: abstract, user_asked: true, reason: "..."}.
 
 shared:
   voice: {provider: chatterbox, language: en-US, studio: {gender: male, style: chatterbox-soft, pace: natural}}
@@ -28,7 +30,7 @@ recipes:
     music: lofi-tech
     pacing: {change_every: 0.75, hard_cuts_per_15s: 1, transitions: [cut, zoom, flash]}
     mix: {music_under_voice_db: -12, sfx_levels: {trombone: -14, laugh: -16, applause: -16}}
-    gate: {image_share_min: 0.40, image_changes_pm_min: 10, longest_no_image_max: 45, text_share_max: 0.40}
+    gate: {image_share_min: 0.40, image_changes_pm_min: 10, longest_no_image_max: 45, text_share_max: 0.40, image_beats_min: 0.35, screenshot_of_images_max: 0.80, photo_share_min: 0.10}
     steps: 5                  # how many stops the roadmap has; the step block repeats this many times
     beats:
       - {id: hook,    type: story,     bars: 2, note: "frame 0 is a real image that shows the pain (not a title). One line, huge."}
@@ -42,7 +44,7 @@ recipes:
       - {id: recap,   type: roadmap,   bars: 4, note: "pull back: the whole map lights up (pull_word, reveal_all, cta)"}
       - {id: end,     type: end,       bars: 2, note: "one line CTA"}
     assets:
-      - {need: "hero photo or clip for the hook and the promise", how: "assets search <dir> '<noun>' --kind photo|video", count: 2}
+      - {need: "hero photo or clip for the hook and the promise", how: "assets source <dir> '<what it shows>' --beat <id>", count: 2}
       - {need: "one real website or tool screenshot per roadmap stop", how: "fishvideo capture <dir> (website tour) or assets shot", count: "steps"}
       - {need: "3 to 6 site screenshots for the pile", how: "assets shot <dir> <url>", count: 4}
       - {need: "one licensed reaction clip or b-roll per step", how: "assets search <dir> '<mood>' --kind video  (memes need the viral opt-in)", count: "steps"}
@@ -60,7 +62,7 @@ recipes:
     style: glow-metaphor
     music: dark-drone
     pacing: {change_every: 1.0, hard_cuts_per_15s: 2, transitions: [flash, zoom, cut], snap: beat, lead_in: 0.1, tail: 0.2, max_word_gap: 0.9, line_gap: 0.05}
-    gate: {image_share_min: 0.85, image_changes_pm_min: 10, longest_no_image_max: 6, text_share_max: 0.10}
+    gate: {image_share_min: 0.85, image_changes_pm_min: 10, longest_no_image_max: 6, text_share_max: 0.10, image_beats_min: 0.85, screenshot_of_images_max: 0.0, photo_share_min: 0.85}
     beats:
       - {id: s1, type: story, bars: 2, note: "hook: the most striking real photo, one huge line that states the surprise. Frame 0 is already full."}
       - {id: s2, type: story, bars: 2, note: "the setup: date or place on screen (motif: date or route), kicker names the series"}
@@ -69,8 +71,8 @@ recipes:
       - {id: s5, type: story, bars: 2, note: "the twist"}
       - {id: s6, type: story, bars: 2, note: "open loop: motif stamp 'PART 2' or a question; no logo, no thanks"}
     assets:
-      - {need: "one real photo per scene (6), PD or CC licensed, portrait-friendly", how: "assets search <dir> '<person or place>' --kind photo --providers wikimedia,pexels  then assets get", count: 6}
-      - {need: "a second photo for the scene that swaps (srcs)", how: "assets search ...", count: 1}
+      - {need: "one real photo per scene (6), PD or CC licensed, portrait-friendly", how: "assets source <dir> '<person or place>' --beat <id> [--depicts '<who>'] (Commons, NASA, Library of Congress)", count: 6}
+      - {need: "a second photo for the scene that swaps (srcs)", how: "assets source <dir> '<query>' --beat <id>", count: 1}
       - {need: "credit every photo: assets/credits.json is filled by `assets get`", how: "automatic", count: 0}
   bold-short:
     label: "Bold typographic Short"
@@ -85,7 +87,7 @@ recipes:
     style: studio-kinetic
     music: hiphop-groove
     pacing: {change_every: 0.9, hard_cuts_per_15s: 3, transitions: [cut, flash], snap: beat, lead_in: 0.1, tail: 0.2, max_word_gap: 0.9, line_gap: 0.05}
-    gate: {image_share_min: 0.0, image_changes_pm_min: 0, longest_no_image_max: 9999, text_share_max: 0.15, graphic_share_min: 0.85}
+    gate: {image_share_min: 0.0, image_changes_pm_min: 0, longest_no_image_max: 9999, text_share_max: 0.15, graphic_share_min: 0.85, image_beats_min: 0.0, screenshot_of_images_max: 0.0, photo_share_min: 0.0}
     beats:
       - {id: hook,  type: bold, bars: 2, note: "the claim in 2 to 4 giant words; shape: burst or circle"}
       - {id: b1,    type: bold, bars: 2, note: "one fact per scene; change the ground colour (g) every scene"}

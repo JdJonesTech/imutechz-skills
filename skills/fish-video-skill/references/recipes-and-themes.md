@@ -18,6 +18,17 @@ Measured from the storyboard and the timeline, never judged: each scene is `imag
 
 Measured on the benchmarks: roadmap video 44% image, 13.0 new images/min, longest gap 39.5 s, 36% text; Onoda Part 1 and 2 100% image, 14.1 and 13.3 per minute; the bold Short 100% drawn, 0% text. A video made only of title, kinetic, quote, bullets, stat and end cards scores 100% text and fails every recipe.
 
+## Real assets, provenance and honesty (every video)
+
+The imagery gate runs inside `fishvideo gate` and render for every project, with the recipe's thresholds or the generic ones. Besides coverage (`image_share`, `image_beats`, `photo_share`, new images per minute, longest gap, text share) it checks, per beat:
+
+- **Provenance.** Each image must exist and have a record in `assets/credits.json` with source URL, licence and author. `fishvideo assets source <dir> "<query>" --beat <id>` does it in one step: it searches Wikimedia Commons, NASA and the Library of Congress (and Pexels/Pixabay when their keys are set), keeps only results whose licence the API confirms (nothing unconfirmed is used), downloads, writes the credit, and points the beat at the file. Credits reach every post text and `metadata/credits.txt`. `assets plan <dir>` lists beats still without an image. Own captures in `assets/shots/` are exempt from the author rule; put your own pictures in `assets/own/` with a credit record.
+- **No screenshot as the main visual.** Site screenshots count as product visuals, but they may not exceed the recipe's share of the image time (story-short and bold-short 0%; roadmap-explainer 80%, the long benchmark measured 75%) and `photo_share` requires real photos or footage as well.
+- **Honesty labels.** A `story`, `image` or `statement` photo needs `label: archive photo` (it truly shows that person or event; set by `--depicts`) or `label: illustrative` (a generic picture). The label is printed on screen.
+- **Opt-out.** Only when the user asks for an abstract or text-led video: `visuals: {mode: abstract, user_asked: true, reason: "<their words>"}`.
+
+Benchmarks: the coverage thresholds pass the long roadmap video and both Onoda parts. Their derived image files (`lub_*.jpg`) were never credited one by one, so under the new provenance rule they would be flagged: credit each file you ship.
+
 ## Frame-sheet sign-off (`fishvideo signoff <dir>`)
 
 Writes `build/<p>/review/SIGNOFF.md`: a checklist and one row per scene. For each scene write what you see (4+ words, name every object) and a verdict `ok` or `fix`. `package` refuses while a row is TODO or `fix`, a box is unticked, or the file is older than the last render. QA cannot see an empty half-frame or a title card; this step makes a person (or model) look.

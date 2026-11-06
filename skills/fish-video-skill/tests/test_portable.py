@@ -78,7 +78,7 @@ def test_text_card_video_fails_every_image_recipe(tmp_path):
 
 def test_photo_led_video_passes_story_short(tmp_path):
     sc = [{"id": f"s{i}", "type": "story", "bars": 2, "params": {"src": f"assets/photo/{i}.jpg", "lines": ["x"]}} for i in range(6)]
-    m, fails = gates.check(_project(tmp_path, sc), recipe="story-short")
+    m, fails = gates.check(_project(tmp_path, sc), recipe="story-short", provenance_checks=False)
     assert not fails and m["image_share"] == 1.0 and m["image_changes_pm"] >= 10
 
 
@@ -89,7 +89,7 @@ def test_a_photo_swapping_inside_a_scene_counts_as_changes(tmp_path):
 
 def test_a_long_stretch_without_images_fails(tmp_path):
     sc = [{"id": "a", "type": "story", "bars": 1, "params": {"src": "a.jpg"}}, {"id": "b", "type": "statement", "bars": 6, "params": {}}, {"id": "c", "type": "story", "bars": 1, "params": {"src": "c.jpg"}}]
-    _, fails = gates.check(_project(tmp_path, sc), recipe="story-short")
+    _, fails = gates.check(_project(tmp_path, sc), recipe="story-short", provenance_checks=False)
     assert any("no image" in f for f in fails)
 
 
@@ -103,15 +103,147 @@ def test_bold_short_needs_drawn_visuals_not_text_cards(tmp_path):
     assert not gates.check(_project(tmp_path / "x", ok, "bold-short"), recipe="bold-short")[1] if (tmp_path / "x").mkdir() is None else True
 
 
-def test_hard_gate_blocks_render_for_a_recipe_project_only(tmp_path):
+def test_the_gate_blocks_render_for_every_project_not_only_recipes(tmp_path):
     sc = [{"id": "a", "type": "title", "bars": 2, "params": {"x": "y"}}]
     p = _project(tmp_path, sc, "story-short")
     iv.record(p, {})
-    assert any("imagery gate" in e for e in iv.gate(p, "render"))
+    assert any("imagery gate (story-short)" in e for e in iv.gate(p, "render"))
     b = load_yaml(p / "brief.yaml"); b.pop("recipe"); save_yaml(p / "brief.yaml", b)
-    assert not any("imagery gate" in e for e in iv.gate(p, "render"))
+    assert any("imagery gate (default)" in e for e in iv.gate(p, "render"))           # a text-only video fails by default too
 
 
+def test_explicit_opt_out_needs_the_users_request(tmp_path):
+    sc = [{"id": "a", "type": "title", "bars": 2, "params": {"x": "y"}}]
+    p = _project(tmp_path, sc, "story-short")
+    b = load_yaml(p / "brief.yaml"); b["visuals"] = {"mode": "abstract"}; save_yaml(p / "brief.yaml", b)
+    _, f = gates.check(p)
+    assert any("user_asked" in x for x in f)
+    b["visuals"] = {"mode": "abstract", "user_asked": True, "reason": "the user asked for a text-led video"}; save_yaml(p / "brief.yaml", b)
+    m, f = gates.check(p)
+    assert m["opt_out"] and f == []
+
+
+def _credited(tmp_path, srcs, credits, scenes=None, label=None, typ="story"):
+    p = tmp_path / "cp"
+    (p / "assets" / "photo").mkdir(parents=True)
+    for x in srcs:
+        (p / x).write_bytes(b"x")
+    (p / "assets" / "credits.json").write_text(json.dumps(credits))
+    params = {"src": srcs[0], "lines": ["x"], **({"label": label} if label else {})}
+    save_yaml(p / "brief.yaml", {"title": "t", "recipe": "story-short", "platforms": ["shorts"], "voice": {"provider": "none"}})
+    save_yaml(p / "storyboard.yaml", {"title": "t", "bpm": 120, "scenes": scenes or [{"id": f"s{i}", "type": typ, "bars": 2, "params": {**params, "src": srcs[0]}} for i in range(4)]})
+    return p
+
+
+GOOD = {"file": "assets/photo/a.jpg", "url": "https://commons.example/a", "license": "CC0", "author": "A. Person", "provider": "wikimedia", "id": "w-a"}
+
+
+def test_provenance_requires_existing_files_with_source_licence_and_author(tmp_path):
+    p = _credited(tmp_path, ["assets/photo/a.jpg"], [GOOD], label="illustrative")
+    assert gates.check(p)[1] == []
+    q = _credited(tmp_path / "n", ["assets/photo/a.jpg"], [], label="illustrative") if (tmp_path / "n").mkdir() is None else None
+    assert any("no credit record" in x and "assets source" in x for x in gates.check(q)[1])
+    r = _credited(tmp_path / "m", ["assets/photo/a.jpg"], [{**GOOD, "author": ""}], label="illustrative") if (tmp_path / "m").mkdir() is None else None
+    assert any("lacks author" in x for x in gates.check(r)[1])
+    s = _credited(tmp_path / "x", ["assets/photo/a.jpg"], [GOOD], label="illustrative") if (tmp_path / "x").mkdir() is None else None
+    (s / "assets" / "photo" / "a.jpg").unlink()
+    assert any("does not exist" in x for x in gates.check(s)[1])
+
+
+def test_honesty_label_is_required_for_photos_of_people_and_events(tmp_path):
+    p = _credited(tmp_path, ["assets/photo/a.jpg"], [GOOD])
+    f = gates.check(p)[1]
+    assert any("label: archive photo" in x and "illustrative" in x for x in f)
+    ok = _credited(tmp_path / "ok", ["assets/photo/a.jpg"], [{**GOOD, "depicts_verified": True}]) if (tmp_path / "ok").mkdir() is None else None
+    assert not any("label" in x for x in gates.check(ok)[1])
+
+
+def test_site_screenshots_cannot_be_the_main_visual(tmp_path):
+    sc = [{"id": f"w{i}", "type": "site", "bars": 2, "params": {"src": f"assets/shots/s{i}.jpg", "url": "x"}} for i in range(6)]
+    p = _project(tmp_path, sc, "story-short")
+    f = gates.check(p, provenance_checks=False)[1]
+    assert any("screenshot" in x for x in f)
+    rm = gates.check(_project(tmp_path / "r", sc, "roadmap-explainer") if (tmp_path / "r").mkdir() is None else None, provenance_checks=False)[1]
+    assert any("not site screenshots" in x for x in rm)
+
+
+def test_benchmark_thresholds_keep_the_benchmarks_passing_and_text_cards_failing():
+    cfg = recipes.all_recipes()
+    for r, m in (("roadmap-explainer", {"image_share": .441, "image_beats": .507, "photo_share": .11, "screenshot_of_images": .751, "image_changes_pm": 13.0, "longest_no_image": 39.5, "text_share": .356}),
+                 ("story-short", {"image_share": 1, "image_beats": 1, "photo_share": 1, "screenshot_of_images": 0, "image_changes_pm": 13.3, "longest_no_image": 0, "text_share": 0})):
+        g = {**gates.GENERIC, **cfg[r]["gate"]}
+        assert m["image_share"] >= g["image_share_min"] and m["image_beats"] >= g["image_beats_min"] and m["photo_share"] >= g["photo_share_min"]
+        assert m["screenshot_of_images"] <= g["screenshot_of_images_max"] and m["image_changes_pm"] >= g["image_changes_pm_min"]
+        assert m["longest_no_image"] <= g["longest_no_image_max"] and m["text_share"] <= g["text_share_max"]
+        assert 1.0 > g["text_share_max"] and 0.0 < g["image_share_min"] + g["photo_share_min"]          # an all-text video is outside both
+
+
+class _FakeAssets:
+    pass
+
+
+def test_source_picks_confirmed_licences_credits_them_and_patches_the_beat(tmp_path, monkeypatch):
+    import assets as A
+    import fvnet
+    p = tmp_path / "sp"
+    (p / "assets").mkdir(parents=True)
+    save_yaml(p / "brief.yaml", {"title": "t", "platforms": ["shorts"]})
+    save_yaml(p / "storyboard.yaml", {"title": "t", "bpm": 120, "scenes": [{"id": "s1", "type": "story", "bars": 2, "params": {"src": "assets/photo/TODO.jpg", "lines": ["x"]}}]})
+    cands = [{"id": "nasa-1", "provider": "nasa", "risk": "unverified", "_ok": False}, {"id": "wikimedia-9", "provider": "wikimedia", "risk": "safe", "_ok": True}]
+    monkeypatch.setattr(A, "search", lambda *a, **k: cands)
+    seen = {}
+    def fake_get(project, ids, accept_risk=False):
+        seen["ids"] = ids
+        f = project / "assets" / "photo" / "wikimedia-9.jpg"
+        f.parent.mkdir(parents=True, exist_ok=True); f.write_bytes(b"x")
+        fvnet.add_credit(project, {"id": "wikimedia-9", "provider": "wikimedia", "file": "assets/photo/wikimedia-9.jpg", "url": "https://commons.example/9", "license": "CC BY 4.0", "author": "J. Doe", "title": "T"})
+        return [f]
+    monkeypatch.setattr(A, "get", fake_get)
+    got = A.source(p, "lighthouse", beat="s1")
+    assert seen["ids"] == ["wikimedia-9"]                              # the unverified result was never downloaded
+    assert got[0]["author"] == "J. Doe"
+    sc = load_yaml(p / "storyboard.yaml")["scenes"][0]["params"]
+    assert sc["src"] == "assets/photo/wikimedia-9.jpg" and sc["label"] == "illustrative"
+    A.source(p, "lighthouse", beat="s1", depicts="the real keeper")
+    cr = json.loads((p / "assets" / "credits.json").read_text())[0]
+    assert cr["depicts_verified"] is True
+    assert load_yaml(p / "storyboard.yaml")["scenes"][0]["params"]["label"] == "archive photo"
+
+
+def test_source_refuses_when_no_licence_is_confirmed(tmp_path, monkeypatch):
+    import assets as A
+    p = tmp_path / "sp2"
+    (p / "assets").mkdir(parents=True)
+    save_yaml(p / "brief.yaml", {"title": "t", "platforms": ["shorts"]})
+    monkeypatch.setattr(A, "search", lambda *a, **k: [{"id": "x", "risk": "unverified", "_ok": False}])
+    with pytest.raises(FishError) as e:
+        A.source(p, "anything")
+    assert "unconfirmed licence" in str(e.value)
+
+
+def test_library_of_congress_provider_trusts_only_stated_rights(monkeypatch):
+    import assets as A
+    import fvnet
+    data = {"results": [
+        {"id": "http://www.loc.gov/item/111/", "url": "https://www.loc.gov/item/111/", "title": "Lighthouse", "image_url": ["https://tile.loc.gov/a.jpg", "https://tile.loc.gov/b.jpg"],
+         "rights_advisory": "No known restrictions on publication.", "contributor": ["Photographer, A."]},
+        {"id": "http://www.loc.gov/item/222/", "url": "https://www.loc.gov/item/222/", "title": "Other", "image_url": ["https://tile.loc.gov/c.jpg"], "rights_advisory": "Rights status not evaluated."}]}
+    monkeypatch.setattr(fvnet, "fetch_json", lambda *a, **k: data)
+    r = A._loc("lighthouse", "photo", 5)
+    assert [x["risk"] for x in r] == ["safe", "unverified"] and r[0]["download_url"].endswith("b.jpg") and "loc" in A.PROVIDERS
+    assert "loc" in A.DEFAULT_PROVIDERS["photo"]
+
+
+def test_assets_plan_lists_beats_without_images(tmp_path):
+    import assets as A
+    sc = [{"id": "a", "type": "story", "bars": 2, "params": {"src": "assets/photo/a.jpg"}}, {"id": "b", "type": "title", "bars": 2, "params": {}}]
+    rows = {r["beat"]: r for r in A.plan_report(_project(tmp_path, sc))}
+    assert rows["a"]["kind"] == "image" and rows["b"]["kind"] == "text"
+
+
+def test_story_scene_shows_the_honesty_label():
+    js = (SKILL / "scripts" / "stage" / "scenes" / "story.js").read_text()
+    assert "p.label" in js and "toUpperCase" in js
 def test_signoff_requires_description_ok_verdicts_and_checked_boxes(tmp_path):
     sc = [{"id": "a", "type": "story", "bars": 2, "params": {"src": "a.jpg"}}]
     p = _project(tmp_path, sc)
@@ -467,3 +599,44 @@ def test_cli_exposes_the_required_step_and_the_opt_out():
 def test_skill_md_lists_the_thumbnail_step_as_required():
     md = (SKILL / "SKILL.md").read_text()
     assert "fishvideo thumbnail" in md and "required" in md.lower()
+
+
+# ------------------------------------------------------------------ text over photos: contrast measured on rendered frames
+def _photo_project(tmp_path, theme, bright):
+    from PIL import Image
+    import numpy as np
+    p = tmp_path / f"ph-{theme}-{'b' if bright else 'd'}"
+    (p / "assets").mkdir(parents=True)
+    rng = np.random.default_rng(3)
+    base = 235 if bright else 25
+    arr = np.clip(base + rng.normal(0, 8, (1080, 1920, 3)), 0, 255).astype("uint8")
+    Image.fromarray(arr).save(p / "assets" / "a.jpg")
+    save_yaml(p / "brief.yaml", {"title": "t", "platforms": ["youtube"], "language": "en-US", "theme": theme, "voice": {"provider": "none"}, "captions": {"burn": False}, "brand": {"name": ""}})
+    save_yaml(p / "storyboard.yaml", {"title": "t", "bpm": 120, "scenes": [{"id": "a", "type": "story", "bars": 2, "say": "", "params": {"src": "assets/a.jpg", "kicker": "KICKER", "label": "illustrative",
+                                                                                                         "lines": [{"text": "The *accent* word", "at": 0.0, "size": 110}, {"text": "small *dim* line", "at": 0.0, "size": 70, "dim": True}]}}]})
+    return p
+
+
+@needs_browser
+@pytest.mark.parametrize("bright", [True, False])
+def test_story_text_and_accent_words_stay_readable_over_bright_and_dark_photos(tmp_path, bright):
+    from fvcore import node, last_json_line
+    worst = {}
+    for theme in themes.all_themes():
+        p = _photo_project(tmp_path, theme, bright)
+        import storyboard as sbm
+        sbm.build(p, quiet=True)
+        r = node("designprobe.mjs", p, "--platform", "youtube", "--scenes", "--k", "0.9", "--mode", "render", "--out", p / "probe", capture=True, check=False)
+        res = last_json_line(r.stdout or "") or {}
+        if r.returncode != 0 or not res.get("probe"):
+            pytest.skip("no browser: " + ((r.stderr or "")[-80:]))
+        fr = json.loads(open(res["probe"]).read())["frames"][0]
+        img = dz.load_rgb(fr["file"])
+        for t in fr["texts"]:
+            if t["text"].upper() in ("KICKER", "ILLUSTRATIVE"):
+                continue                                                 # chips carry their own background
+            ratio = dz.text_contrast(img, t["box"], dz.parse_color(t["color"]), tol=60).get("ratio")
+            if ratio is not None:
+                worst[theme] = min(worst.get(theme, 99), ratio)
+    bad = {k: round(v, 1) for k, v in worst.items() if v < 4.5}
+    assert not bad, f"text under 4.5:1 over a {'bright' if bright else 'dark'} photo: {bad}"

@@ -413,11 +413,7 @@ def gate(project: Path, stage: str = "render", force: bool = False) -> list[str]
             _m, fails = gates.check(project)
         except FishError as e:
             _m, fails = None, [str(e)]
-        if brief.get("recipe"):
-            errs += [f"imagery gate ({brief['recipe']}): {x}" for x in fails]
-        else:
-            for x in fails:
-                warn(f"imagery (no recipe, advisory): {x}")
+        errs += [f"imagery gate ({brief.get('recipe') or 'default'}): {x}" for x in fails]       # every video: the default rule; opt-out only via visuals.mode: abstract on the user's request
         need = set((brief.get("approvals") or {}).get("required") or [])
         got = load_json(project / "approvals.json", default={}) if (project / "approvals.json").exists() else {}
         for n in ("storyboard", "stills"):

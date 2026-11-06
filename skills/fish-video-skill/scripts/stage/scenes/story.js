@@ -6,6 +6,7 @@
               and one optional motif. The picture leads; the text is small and sits low.
      src | srcs [{src, word|at}]   one photo, or a sequence that cross-fades on spoken words (image changes inside a scene)
      pos ("50% 50%"), bright (.62), pan (left|right|up|down, default none), z0 (1.04), z1 (1.18), contain (true: framed card on a blurred ground), ar
+     label (archive photo | illustrative: required by `fishvideo gates` for photos of people or events; shown top right)
      kicker, lines [{text, word|at, size, dim}], block (.42 share of the safe height), lift, align (center|left)
      motif    none | date | stamp | route | rings | dust     (date, stamp, from, to, stamp_word, rx, ry)
    statement  big calm lines. Later lines are visible but dimmed from frame 0 and light up on their word.
@@ -27,6 +28,16 @@
   const onAcc = () => (L.isDark(C.accent) ? "#ffffff" : "#0b0b0c");
   const fnt = (w, px, extra = "") => `font:${w || T().weight} ${px}px/1.08 var(--display);letter-spacing:${T().track}em;${T().caps ? "text-transform:uppercase;" : ""}${extra}`;
   const mark = (txt) => L.esc(String(txt)).replace(/\*([^*]+)\*/g, `<span style="color:${C.accent}">$1</span>`).replace(/\\n|\n/g, "<br>");
+  /* an accent that stays readable over a photo: lifted toward white until it holds 7:1 against the near-black scrim */
+  const rgb = (h) => { const n = parseInt(String(h).replace("#", ""), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  const relLum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+  const ratio = (a, b) => { const x = relLum(a), y = relLum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  const photoAccent = () => {
+    let c = rgb(C.accent);
+    for (let i = 0; i < 16 && ratio(c, [11, 11, 13]) < 7; i++) c = c.map((v) => Math.round(v + (255 - v) * 0.14));
+    return "#" + c.map((v) => v.toString(16).padStart(2, "0")).join("");
+  };
+  const markP = (txt) => L.esc(String(txt)).replace(/\*([^*]+)\*/g, `<span style="color:${photoAccent()}">$1</span>`).replace(/\\n|\n/g, "<br>");
   const when = (c, it, k, n, t0 = 0.2, t1) => {
     const w = it && it.word ? L.wordTime(c, it.word) : null;
     if (w != null) return Math.max(0, w - 0.12);
@@ -103,18 +114,22 @@
       }
       const sc = el("div", "abs", root); L.pos(sc, 0, 0, c.W, c.H);
       const s = T().scrim;
-      sc.style.cssText += `;background:linear-gradient(180deg,${L.hexA("#08080a", s * 0.9)} 0%,${L.hexA("#08080a", 0.05)} 28%,${L.hexA("#08080a", 0.15)} 52%,${L.hexA("#08080a", Math.min(0.9, s + 0.3))} 100%)`;
+      sc.style.cssText += `;background:linear-gradient(180deg,${L.hexA("#08080a", s * 0.9)} 0%,${L.hexA("#08080a", 0.05)} 28%,${L.hexA("#08080a", 0.5)} 46%,${L.hexA("#08080a", 0.86)} 62%,${L.hexA("#08080a", 0.95)} 100%)`;
       const fx = (st.fx = el("div", "abs", root)); L.pos(fx, 0, 0, c.W, c.H); fx.style.overflow = "hidden";
       if (p.kicker) { st.k = kickerEl(root, p.kicker, c); L.pos(st.k, c.safe.x, c.safe.y + 6 * u); }
+      if (p.label) {
+        const lb = el("div", "abs", root, L.esc(String(p.label).toUpperCase()));   /* honesty label: "archive photo" or "illustrative" */
+        lb.style.cssText += `;right:${c.W - c.safe.x - c.safe.w}px;top:${c.safe.y + 6 * u}px;padding:${5 * u}px ${12 * u}px;border-radius:${4 * u}px;background:rgba(0,0,0,.6);color:#f8f6f0;font:700 ${20 * u}px var(--sans);letter-spacing:.12em;white-space:nowrap`;
+      }
       const ln = (st.ln = el("div", "abs", root)); L.pos(ln, c.safe.x, c.safe.y + 84 * u, c.safe.w, 4 * u);
       ln.style.cssText += `;background:${C.accent};transform-origin:0 50%;box-shadow:0 0 ${18 * u}px ${C.accent}`;
       const lines = p.lines || [], left = (p.align || T().align) === "left";
       const blockH = c.safe.h * (p.block || 0.42), top = c.safe.y + c.safe.h - blockH - (p.lift || 0) * u, per = blockH / Math.max(1, lines.length);
       st.lines = lines.map((it, k) => {
         const o = typeof it === "string" ? { text: it } : it;
-        const d = el("div", "abs", root, `<div style="width:100%">${mark(o.text)}</div>`);
+        const d = el("div", "abs", root, `<div style="width:100%">${markP(o.text)}</div>`);
         L.pos(d, c.safe.x, top + k * per, c.safe.w, per);
-        d.style.cssText += `;display:flex;align-items:center;justify-content:${left ? "flex-start" : "center"};text-align:${left ? "left" : "center"};color:${o.dim ? "#d3d0c8" : "#f8f6f0"};${fnt(null, (o.size || 110) * u)};text-shadow:0 ${4 * u}px ${24 * u}px rgba(0,0,0,.85)`;
+        d.style.cssText += `;display:flex;align-items:center;justify-content:${left ? "flex-start" : "center"};text-align:${left ? "left" : "center"};color:${o.dim ? "#d3d0c8" : "#f8f6f0"};${fnt(null, (o.size || 110) * u)};text-shadow:0 0 ${3 * u}px rgba(0,0,0,.9),0 ${4 * u}px ${24 * u}px rgba(0,0,0,.9)`;
         L.fit(d, (o.size || 110) * u, 40 * u, c.safe.w, per);
         return { d, t0: when(c, o, k, lines.length, 0.1, c.dur * 0.7) };
       });
