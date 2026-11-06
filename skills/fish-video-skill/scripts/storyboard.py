@@ -243,8 +243,16 @@ def validate(sb: dict, cfg: dict | None = None) -> tuple[list[str], list[str]]:
         blob = repr(p) + repr(s.get("say"))
         if re.search(r"\bTODO\b|\bTBD\b|lorem ipsum", blob, re.I):
             warns.append(f"{where}: contains TODO/placeholder text")
-    if scenes and scenes[-1].get("type") != "end":
-        warns.append("the last scene is not an `end` card (brand + call to action)")
+    no_end = sb.get("end_card") is False
+    rn = ((cfg or {}).get("brief") or {}).get("recipe")
+    if rn and not no_end:
+        try:
+            import recipes
+            no_end = recipes.get(rn).get("end_card") is False        # story and bold Shorts end on an open loop or a rule, not a logo card
+        except Exception:                                            # noqa: BLE001 - an unknown recipe is reported elsewhere
+            pass
+    if scenes and scenes[-1].get("type") != "end" and not no_end:
+        warns.append("the last scene is not an `end` card (brand + call to action). Recipes whose last beat is an open loop set `end_card: false`")
     return errors, warns
 
 
@@ -325,6 +333,8 @@ def resolve(project: Path, platform: str, cfg: dict, sb: dict, clips: dict | Non
             bars = max(0.5, math.ceil(need / ts / beat - 1e-6) * beat / bar)
         else:
             bars = max(1, math.ceil(need / ts / bar - 1e-6))
+        if s.get("bars_min"):                    # a recipe slot: the narration sets the length, never shorter than this
+            bars = max(bars, s["bars_min"])
         if s.get("bars") and need / ts > bars * bar + 0.01:
             warn(f"{platform}: scene {s['id']} needs {need:.1f}s but has {bars} bars ({bars * bar:.1f}s)")
         if s.get("_footage") is not None and bars * bar * ts > s["_footage"] + 0.05:
@@ -337,7 +347,7 @@ def resolve(project: Path, platform: str, cfg: dict, sb: dict, clips: dict | Non
         if s["type"] == "meme":
             s["params"] = _meme_params(project, s.get("params") or {})
         out_scenes.append({"id": s["id"], "type": s["type"], "t0": round(t0, 4), "t1": round(t1, 4), "bars": bars, "ts": ts,
-                           "params": {**(s.get("params") or {}), **({"cues": s["cues"]} if s.get("cues") else {})}, "chapter": s.get("chapter"), "transition": s.get("transition", "fade" if i else "cut"),
+                           "params": {**(s.get("params") or {}), **({"cues": s["cues"]} if s.get("cues") else {}), **_px_params(project, s)}, "chapter": s.get("chapter"), "transition": s.get("transition", "fade" if i else "cut"),
                            "hud": s.get("hud"), "energy": energy,
                            **{k: s[k] for k in CAMERA_KEYS if s.get(k) is not None}})
         for pl in placed:
@@ -445,6 +455,28 @@ def custom_scene_overrides(project: Path, sb: dict) -> list[str]:
                 out.append(f"{rel}: defines scene {name!r}, which REPLACES the built-in {name!r} scene for every scene of that type "
                            f"in this video. Rename it if that is not intended.")
     return sorted(set(out))
+
+
+def image_sizes(project: Path, params: dict) -> dict:
+    """{path: [w, h]} for the pictures a scene shows (so the stage can decide between full-bleed and a framed card without decoding first)."""
+    out = {}
+    refs = [params.get("src")] + [x.get("src") for x in (params.get("srcs") or []) if isinstance(x, dict)]
+    for r in refs:
+        if isinstance(r, str) and r.lower().endswith((".jpg", ".jpeg", ".png", ".webp")) and (Path(project) / r).exists():
+            try:
+                from PIL import Image
+                with Image.open(Path(project) / r) as im:
+                    out[r] = list(im.size)
+            except Exception:                                     # noqa: BLE001 - an unreadable file is reported by the gate
+                pass
+    return out
+
+
+def _px_params(project: Path, s: dict) -> dict:
+    if s.get("type") not in ("story", "image", "statement"):
+        return {}
+    px = image_sizes(project, s.get("params") or {})
+    return {"_px": px} if px else {}
 
 
 def build(project: Path, *, quiet: bool = False) -> dict:

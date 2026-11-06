@@ -79,7 +79,7 @@
     CAPSTYLE = typeof rawStyle === "string" ? rawStyle : "karaoke";
     const burn = TL.captions && TL.captions.burn && CAPSTYLE !== "none";
     const capH = burn ? TL.captions.reserve || Math.round(H * (CAPSTYLE === "pop" ? 0.1 : CAPSTYLE === "minimal" ? 0.12 : 0.17)) : 0;
-    const base = { W, H, u: Math.min(W, H) / 1080, mode: modeOf(W, H), brand: TL.brand || {}, theme: TL.theme || {}, beat: L.BEAT, bar: L.BAR, fps: L.FPS, lang: TL.lang || "en", sfx: (typeof TL.sfx === "string" ? TL.sfx : TL.sfx && TL.sfx.density) || "standard", texture: TEX };
+    const base = { W, H, minPx: (TL.legibility && TL.legibility.min_px) || 22, u: Math.min(W, H) / 1080, mode: modeOf(W, H), brand: TL.brand || {}, theme: TL.theme || {}, beat: L.BEAT, bar: L.BAR, fps: L.FPS, lang: TL.lang || "en", sfx: (typeof TL.sfx === "string" ? TL.sfx : TL.sfx && TL.sfx.density) || "standard", texture: TEX };
     base.P = base.mode === "port" || base.mode === "tall";
     base.safe = { x: S.left, y: S.top, w: W - S.left - S.right, h: H - S.top - S.bottom - capH };
     base.capTop = H - S.bottom - capH;

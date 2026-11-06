@@ -23,6 +23,7 @@ from pathlib import Path
 from fvcore import SKILL, FishError, ensure_project, load_json, load_yaml, log, main_guard, save_json, save_yaml, secret, warn
 
 CFG = SKILL / "config"
+SERIES = re.compile(r"\bpart\s*(?:1|2|one|two)\b(?:\s*of\s*\d)?|\bto be continued\b", re.I)
 PLACEHOLDER = re.compile(r"TODO|<[^<>\n]{2,80}>|lorem ipsum", re.I)
 # phrases the v1 scaffold produced; they must never ship
 STOCK_PHRASES = ["explained.", "in 60 seconds", "Here is ", "in three parts", "Step by step:", "Thanks for watching", "This is "]
@@ -81,11 +82,15 @@ def _options(q: dict, answers: dict) -> list[dict]:
             c = v.get("colors") or {}
             desc = "Give your hex codes (bg, ink, accent)" if k == "brand" else f"bg {c.get('bg')} ink {c.get('ink')} accent {c.get('accent')}"
             out.append({"label": v["label"] + (" (Recommended)" if k == rec else ""), "value": k, "description": desc})
+        if out and not any("(Recommended)" in o["label"] for o in out):
+            out[0]["label"] += " (Recommended)"
         out.sort(key=lambda o: "(Recommended)" not in o["label"])
         return out
     if src == "music_moods":
         rec = (st["styles"].get(answers.get("style")) or {}).get("defaults", {}).get("music")
         out = [{"label": v["label"] + (" (Recommended)" if k == rec else ""), "value": k, "description": f"library search: '{v['search']}', or an original synthesised score"} for k, v in st["music_moods"].items()]
+        if out and not any("(Recommended)" in o["label"] for o in out):
+            out[0]["label"] += " (Recommended)"
         out.sort(key=lambda o: "(Recommended)" not in o["label"])
         return out
     if src == "voices":
@@ -344,7 +349,13 @@ def summary(project: Path) -> str:
     if c:
         lines.append("Colours: " + ", ".join(f"{k} {v}" for k, v in c.items() if k in ("bg", "ink", "accent", "accent2")))
     v = brief.get("voice") or {}
-    lines.append(f"Voice: {v.get('provider')} {((v.get('fallback') or {}).get('voice') if v.get('provider') != 'elevenlabs' else (v.get('elevenlabs') or {}).get('voice_id'))} ({v.get('delivery', '')})")
+    if v.get("provider") in ("chatterbox", "kokoro") and v.get("studio"):
+        stu = v["studio"]
+        lines.append(f"Voice: {v['provider']} preset {stu.get('style')} ({stu.get('gender', 'male')}, pace {stu.get('pace', 'natural')}; Chatterbox default voice, one sentence at a time, seed 11); language {v.get('language')}")
+    elif v.get("provider") == "none":
+        lines.append("Voice: none (music and text)")
+    else:
+        lines.append(f"Voice: {v.get('provider')} {((v.get('fallback') or {}).get('voice') if v.get('provider') != 'elevenlabs' else (v.get('elevenlabs') or {}).get('voice_id'))} ({v.get('delivery', '')})")
     open_req = [q["id"] for rr in open_questions(project) for q in rr["questions"] if q.get("required")]
     lines.append("")
     lines.append("Open required questions: " + (", ".join(open_req) if open_req else "none"))
@@ -391,6 +402,12 @@ def copy_problems(project: Path) -> list[str]:
                     probs.append(f"{sc.get('id')}: stock scaffold phrase '{ph.strip()}' in narration: rewrite it")
     if not ((load_yaml(project / "brief.yaml") or {}).get("publish") or {}).get("titles"):
         probs.append("publishing copy: write brief.publish.titles (5 options), description, tags and hashtags")
+    brief_ = load_yaml(project / "brief.yaml") or {}
+    if not brief_.get("series"):
+        for sc in sb.get("scenes", []):
+            hit = SERIES.search(json.dumps({"p": sc.get("params"), "say": sc.get("say")}, ensure_ascii=False))
+            if hit:
+                probs.append(f"{sc.get('id')}: series text left in a single video ('{hit.group(0)}'): remove it, or set `series: true` in brief.yaml if this really is part of a series")
     th = sb.get("thumbnail") or {}
     if PLACEHOLDER.search(json.dumps(th)):
         probs.append("thumbnail: placeholder text left")
@@ -406,6 +423,9 @@ def gate(project: Path, stage: str = "render", force: bool = False) -> list[str]
         errs.append(f"interview: required questions still open: {open_req} (run `fishvideo interview {project}` and ask them)")
     if not iv.get("confirmed"):
         errs.append("interview: not confirmed: read `fishvideo interview <dir> --summary` to the user, then `--confirm`")
+    if brief.get("recipe") and stage in ("script", "render"):
+        import gates
+        errs += gates.budget_errors(project) if (project / "storyboard.yaml").exists() else []
     if stage == "render":
         errs += copy_problems(project)
         try:

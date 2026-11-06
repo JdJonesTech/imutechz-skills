@@ -38,7 +38,7 @@ from fvcore import (IS_WIN, SCRIPTS, SKILL, FishError, ensure_project, ffmpeg_bi
                     main_guard, project_config, save_json, save_yaml, sha1, warn)
 
 ENGINES = ("chatterbox", "kokoro")
-SUBCOMMANDS = ("setup", "engines", "say", "audition", "check", "redo", "measure")
+SUBCOMMANDS = ("setup", "engines", "say", "audition", "check", "redo", "measure", "words")
 SR_OUT = 48000
 _CFG = None
 _PROBE: dict[str, dict] = {}
@@ -775,7 +775,7 @@ def synth_lines(lines: list[dict], voice_cfg: dict, engine: str, outdir: Path, f
             refs[rk] = resolve_reference(S, outdir, base)
         S["ref_path"], S["voice_source"] = refs[rk]
         S["ref_id"] = sha1(Path(S["ref_path"]).read_bytes()) if S["ref_path"] else None
-        h = sha1({"say": ln["say"], "mood": ln.get("mood"), "S": {k: v for k, v in S.items() if k not in ("ref_path",)}, "checked": bool(wpy)})
+        h = sha1({"say": ln["say"], "mood": ln.get("mood"), "S": {k: v for k, v in S.items() if k not in ("ref_path", "aliases", "verify")}, "checked": bool(wpy)})
         wav, js = outdir / f"{ln['id']}-{h}.wav", outdir / f"{ln['id']}-{h}.json"
         forced = force is True or (isinstance(force, (set, list, tuple)) and ln["id"] in force)
         if js.exists() and wav.exists() and not forced:
@@ -889,7 +889,7 @@ def synthesize(project: Path, cfg: dict, engine: str, force: set | bool = False)
         cl = clips[ln["id"]]
         cl["wav"] = str(Path(cl["wav"]).resolve().relative_to(project.resolve())).replace("\\", "/")
         st = cl["studio"]
-        flag = "" if all(s.get("ok") is not False for s in st["sentences"]) else "  CHECK THE WORDS"
+        flag = "" if all(s.get("ok") is not False for s in st["sentences"]) else "  CHECK THE WORDS (a homophone? fishvideo voice words <dir> --add heard=written)"
         log(f"  {ln['id']:<18} {cl['speech_end']:5.2f}s  {st['wps'] or 0:.2f} wps  {ln['display'][:56]}{flag}")
     S = studio_settings(cfg["voice"], engine)
     first = next(iter(clips.values()))["studio"] if clips else {}
@@ -1119,6 +1119,8 @@ def cli(argv=None) -> int:
     p.add_argument("--quality", action="store_true", help="add torchaudio SQUIM estimates (a signal-quality proxy, not realism)")
     p = sub.add_parser("redo"); p.add_argument("project"); p.add_argument("line"); p.add_argument("--seed", type=int, default=None)
     p.add_argument("--mood", default=None); p.add_argument("--style", default=None); p.add_argument("--exaggeration", type=float, default=None); p.add_argument("--pace", default=None)
+    p = sub.add_parser("words", help="homophones: tell the check that a transcriber's spelling is the word you wrote")
+    p.add_argument("project"); p.add_argument("--add", action="append", default=[], metavar="HEARD=WRITTEN", help='e.g. --add emos=emus (the transcript hears "emos", the script says "emus")')
     p = sub.add_parser("measure"); p.add_argument("files", nargs="+"); p.add_argument("--words", type=int, default=None)
     a = ap.parse_args(argv)
     d = config()["defaults"]
@@ -1168,6 +1170,20 @@ def cli(argv=None) -> int:
         for r in rep["rows"]:
             log(f"  {r['status']:<4}  {r['check']:<16} {r['detail']}")
         return 1 if any(r["status"] == "FAIL" for r in rep["rows"]) else 0
+    if a.cmd == "words":
+        f = Path(a.project) / "brief.yaml"
+        b = load_yaml(f)
+        al = (((b.setdefault("voice", {})).setdefault("studio", {})).setdefault("aliases", {}))
+        for item in a.add:
+            if "=" not in item:
+                raise FishError(f"--add wants HEARD=WRITTEN, not '{item}'")
+            h, w = item.split("=", 1)
+            al[h.strip().lower()] = w.strip().lower()
+        if a.add:
+            save_yaml(f, b)
+        log("known homophones (heard -> written): " + (", ".join(f"{k} -> {v}" for k, v in al.items()) or "none") +
+            "\nThey only change the words check, never the audio, so no line is re-voiced. If a word is genuinely mispronounced, respell it for the engine in voice.pronunciations instead.")
+        return 0
     if a.cmd == "redo":
         cl = redo(Path(a.project), a.line, seed=a.seed, mood=a.mood, style=a.style, exaggeration=a.exaggeration, pace=a.pace)
         st = cl["studio"]

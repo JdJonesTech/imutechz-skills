@@ -57,7 +57,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fvcore import (SKILL, FishError, browser_bin, ensure_project, ffmpeg_bin, ffprobe_bin, last_json_line, load_json, load_yaml,
+from fvcore import (SKILL, FishError, browser_bin, ensure_project, ffmpeg_bin, ffprobe_bin, last_json_line, load_json, load_yaml, save_json,
                     log, main_guard, node, node_bin, project_config, run, secret, warn)
 import brief as briefmod
 import captions as capmod
@@ -72,7 +72,7 @@ import interview as ivmod
 
 PASSTHRU = {"yt": "youtube", "trends": "trends", "assets": "assets", "screenrec": "screenrec", "dissect": "dissect", "sfx": "sfx", "clean": "clean",
             "review": "review", "voiceover": "voiceover", "beats": "beats", "memes": "memes", "sounds": "sounds",
-            "frame": "design", "thumb": "thumbs", "themes": "themes", "recipes": "recipes", "gates": "gates", "signoff": "gates", "thumbnail": "thumbs"}
+            "frame": "design", "thumb": "thumbs", "themes": "themes", "recipes": "recipes", "gates": "gates", "signoff": "gates", "budget": "gates", "thumbnail": "thumbs"}
 
 
 def passthru(cmd: str, argv: list[str]) -> int:
@@ -80,6 +80,8 @@ def passthru(cmd: str, argv: list[str]) -> int:
     mod = importlib.import_module(PASSTHRU[cmd])
     if cmd == "thumbnail":
         return mod.thumbnail_cli(argv) or 0
+    if cmd == "budget":
+        return mod.budget_cli(argv) or 0
     if cmd == "signoff":
         return mod.signoff_cli(argv) or 0
     return mod.cli(argv) or 0
@@ -87,6 +89,37 @@ def passthru(cmd: str, argv: list[str]) -> int:
 
 def brief_recipe(project: Path):
     return (project_config(project)["brief"]).get("recipe")
+
+
+def qa_fail_errors(project: Path) -> list[str]:
+    """Why `package` must refuse: a platform with no QA report, a stale one, or any FAIL check (each named with its detail)."""
+    errs = []
+    for plat in sbmod.platforms_of(project_config(project)):
+        f = project / "build" / plat / "qa.json"
+        if not f.exists():
+            errs.append(f"{plat}: no QA report: run `fishvideo qa {project.name}`")
+            continue
+        finals = list((project / "build" / plat).glob("final*.mp4"))
+        if finals and f.stat().st_mtime < max(x.stat().st_mtime for x in finals) - 1:
+            errs.append(f"{plat}: the QA report is older than the last render: run `fishvideo qa {project.name}` again")
+        for c in (load_json(f).get("checks") or []):
+            if c.get("status") == "FAIL":
+                errs.append(f"{plat}: QA FAIL `{c.get('check')}`: {str(c.get('detail'))[:160]}")
+    return errs
+
+
+def qa_gate_or_override(project: Path, reason: str | None, dest_after: bool = False) -> str | None:
+    """Raise when QA is failing; with --accept-qa-fail the override is recorded (build/qa-override.json, and in the package) and returned."""
+    errs = qa_fail_errors(project)
+    if not errs:
+        return None
+    if not reason or len(reason.split()) < 3:
+        raise FishError("package: QA is failing, so nothing is packaged:\n  - " + "\n  - ".join(errs[:12]) +
+                        f"\nFix them and run `fishvideo qa {project.name}`. Only if the user accepts the failure, say so explicitly: `--accept-qa-fail \"<their words, 3+ words>\"` (it is recorded in the package).")
+    import time
+    save_json(project / "build" / "qa-override.json", {"when": time.strftime("%Y-%m-%d %H:%M"), "reason": reason, "failures": errs})
+    warn("QA override recorded: " + reason)
+    return reason
 
 
 def gate_or_fail(project: Path, stage: str, force: bool = False) -> None:
@@ -117,7 +150,9 @@ def cmd_new(a) -> Path:
         over["title"] = a.title
     if getattr(a, "recipe", None):
         import recipes
-        over = {**recipes.brief_over(a.recipe), **{k: v for k, v in over.items() if v not in (None, "", [], {})}}
+        parsed = briefmod.parse_prompt(a.prompt or "") if a.prompt else {}
+        base = {k: v for k, v in recipes.brief_over(a.recipe).items() if k not in parsed}      # the request beats the recipe's defaults
+        over = {**base, **{k: v for k, v in over.items() if v not in (None, "", [], {})}}
     proj = briefmod.new_project(a.dir, a.prompt or "", force=a.force, **over)
     if getattr(a, "recipe", None):
         recipes.create(proj, a.recipe)
@@ -214,6 +249,7 @@ def cmd_all(a) -> int:
     reps = qamod.qa(project, plats, lint=not a.no_lint)
     step("package")
     if not a.no_gate:
+        qa_gate_or_override(project, None)
         import thumbs
         te = thumbs.package_gate(project)
         if te:
@@ -242,6 +278,14 @@ def cmd_doctor(keys: bool = False) -> int:
             raise RuntimeError("not installed: the recommended soft voice needs `fishvideo voice setup --engine chatterbox` (one command); until then pick another voice on purpose")
         return "installed (recommended soft voice: style chatterbox-soft)"
     chk("chatterbox", _chatterbox)
+
+    def _fonts():
+        import themes
+        m = themes.missing_fonts(None)
+        if m:
+            raise RuntimeError(f"{len(m)} theme font files missing ({', '.join(sorted({x[0] for x in m})[:4])}...): run `npm install` in the skill folder")
+        return "all theme fonts installed"
+    chk("fonts", _fonts)
     chk("python", lambda: sys.version.split()[0])
     chk("pyyaml", lambda: __import__("yaml").__version__)
     chk("edge-tts", lambda: __import__("edge_tts").__version__)
@@ -333,6 +377,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = proj("qa"); p.add_argument("--platform", default=None); p.add_argument("--no-lint", action="store_true"); p.add_argument("--preview", action="store_true")
     p = proj("package"); p.add_argument("--name", default=None); p.add_argument("--out", default=None)
     p.add_argument("--no-thumbnail", action="store_true", help="only when the user explicitly asks for no thumbnail")
+    p.add_argument("--accept-qa-fail", default=None, help="package despite failing QA: the user's words accepting it (recorded in the package)")
     p.add_argument("--no-gate", action="store_true")
     p = sub.add_parser("doctor"); p.add_argument("--keys", action="store_true", help="explain how to get each missing key")
     p = proj("gate"); p.add_argument("--stage", default="render", choices=["script", "render"])
@@ -347,7 +392,7 @@ def cli(argv=None) -> int:
         return passthru(argv[0], argv[1:])
     if argv and argv[0] == "interview":
         return ivmod.cli(argv[1:])
-    if argv and argv[0] == "voice" and len(argv) > 1 and argv[1] in ("setup", "engines", "say", "audition", "check", "redo", "measure"):
+    if argv and argv[0] == "voice" and len(argv) > 1 and argv[1] in ("setup", "engines", "say", "audition", "check", "redo", "measure", "words"):
         import voicelab                            # local voice studio (references/local-voices.md)
         return voicelab.cli(argv[1:])
     a = build_parser().parse_args(argv)
@@ -416,6 +461,8 @@ def cli(argv=None) -> int:
         for p in sbmod.platforms_of(cfg):
             log(f"{p}: {capmod.write_files(project, p)}")
     elif a.cmd == "stills":
+        import themes
+        themes.check_fonts(cfg["brief"])
         sbmod.build(project, quiet=True)
         p = a.platform or sbmod.platforms_of(cfg)[0]
         extra = ["--scenes"] if a.scenes else ["--every", a.every] if a.every else ["--at", a.at or "0.5"]
@@ -439,7 +486,11 @@ def cli(argv=None) -> int:
             e = gates.signoff_errors(project)
             if e:
                 raise FishError("package: the frame-sheet sign-off is not done:\n  - " + "\n  - ".join(e))
-        pkgmod.package(project, Path(a.out) if a.out else None, a.name)
+        ov = None if a.no_gate else qa_gate_or_override(project, a.accept_qa_fail)
+        dest = pkgmod.package(project, Path(a.out) if a.out else None, a.name)
+        if ov:
+            (Path(dest) / "qa").mkdir(exist_ok=True)
+            (Path(dest) / "qa" / "QA-OVERRIDE.md").write_text(f"# QA override\n\nPackaged with failing QA checks because: {ov}\n\n" + "\n".join("- " + e for e in qa_fail_errors(project)) + "\n", encoding="utf-8")
     return 0
 
 

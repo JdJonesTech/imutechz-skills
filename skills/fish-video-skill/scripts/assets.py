@@ -675,8 +675,22 @@ def _beat_patch(project: Path, beat: str, rel: str, label: str) -> None:
     save_yaml(sbf, sb)
 
 
+def _used_files(project: Path, except_beat: str | None) -> set[str]:
+    sbf = Path(project) / "storyboard.yaml"
+    out = set()
+    if sbf.exists():
+        for sc in load_yaml(sbf).get("scenes", []):
+            if sc.get("id") == except_beat:
+                continue
+            p = sc.get("params") or {}
+            for v in [p.get("src")] + [x.get("src") for x in (p.get("srcs") or []) if isinstance(x, dict)]:
+                if isinstance(v, str):
+                    out.add(Path(v).stem)
+    return out
+
+
 def source(project, query: str, beat: str | None = None, n: int = 1, providers=None, kind: str = "photo", depicts: str | None = None,
-           before: int | None = None) -> list[dict]:
+           before: int | None = None, min_width: int | None = None) -> list[dict]:
     """Search Commons, NASA, the Library of Congress (and Pexels/Pixabay when their keys are set), keep only results whose licence the API
     confirms, download the best `n`, write source, licence and author to assets/credits.json (so they reach every post text and the
     metadata), and point the beat at the file. `depicts` says the picture truly shows that person or event (label: archive photo);
@@ -688,6 +702,30 @@ def source(project, query: str, beat: str | None = None, n: int = 1, providers=N
     opts = {"before": before} if before else {}
     cands = search(project, query, kind, prov, max(n * 4, 8), False, **opts)
     safe = [c for c in cands if c.get("risk") == "safe" and c.get("_ok", True)]
+    if not safe:
+        raise FishError(f"no result for '{query}' has a licence the API confirms (providers: {', '.join(prov)}). Try other words, add --providers, or "
+                        "make the beat a drawn graphic. Nothing is used with an unconfirmed licence.")
+    if kind == "photo":
+        import gates
+        if min_width is None:
+            from fvcore import project_config
+            try:
+                min_width = gates.min_native_width(gates.frame_size(project, None)[0])
+            except Exception:                                         # noqa: BLE001 - no platform yet: a sane default
+                min_width = 540
+        big = [c for c in safe if (c.get("width") or 0) >= min_width]
+        small = [c for c in safe if (c.get("width") or 0) < min_width and c.get("width")]
+        unknown = [c for c in safe if not c.get("width")]
+        if big or unknown:                                           # sharp enough first, biggest first; undersized ones are dropped, not down-ranked into use
+            safe = sorted(big, key=lambda c: -(c.get("width") or 0)) + unknown
+            if small:
+                warn(f"{len(small)} result(s) under {min_width}px wide were skipped: they would render muddy")
+        else:
+            raise FishError(f"every licence-confirmed result for '{query}' is narrower than {min_width}px (largest {max(c['width'] for c in small)}px): it would render blurry. Try other words or --min-width to accept smaller.")
+    used = _used_files(project, beat)
+    fresh = [c for c in safe if Path(c["id"]).stem not in used]
+    if fresh or not used:
+        safe = fresh or safe
     if not safe:
         raise FishError(f"no result for '{query}' has a licence the API confirms (providers: {', '.join(prov)}). Try other words, add --providers, or "
                         "make the beat a drawn graphic. Nothing is used with an unconfirmed licence.")
@@ -708,6 +746,37 @@ def source(project, query: str, beat: str | None = None, n: int = 1, providers=N
             _beat_patch(project, beat, rel, "archive photo" if depicts else "illustrative")
         log(f"{rel}  [{rec['license']}]  {rec['author']}" + (f"  -> beat {beat}" if beat else ""))
     return out
+
+
+def adopt(project, license: str, author: str, source: str, label: str | None = None, files: list[str] | None = None) -> dict:
+    """For an existing project: write a credit record for every referenced picture that has none (using the licence, author and source the
+    caller asserts), and set `label` on story/image/statement beats that lack one. Nothing is guessed: all three facts must be given."""
+    import gates
+    project = ensure_project(project)
+    if not (license and author and source):
+        raise FishError("adopt needs --license, --author and --source: you are asserting where the pictures come from")
+    if label and label not in gates.LABELS:
+        raise FishError(f"--label is one of: {', '.join(gates.LABELS)}")
+    m = gates.measure(project)
+    idx = gates.credit_index(project)
+    added, labelled = [], []
+    for r in m["rows"]:
+        for x in r.get("srcs", []):
+            if x.startswith("assets/") and (project / x).exists() and x not in idx and not (x.startswith("assets/shots/") or r["screenshot"]) and (not files or x in files):
+                add_credit(project, {"id": "adopted-" + slugify(Path(x).stem), "provider": "adopted", "kind": "photo", "title": Path(x).stem, "file": x, "author": author,
+                                     "license": license, "url": source, "credit": f"{Path(x).stem} by {author} ({source}), {license}.", "attribution_required": False, "risk": "safe"})
+                idx[x] = {}
+                added.append(x)
+    if label:
+        sbf = project / "storyboard.yaml"
+        sb = load_yaml(sbf)
+        for sc in sb.get("scenes", []):
+            if sc.get("type") in gates.LABEL_TYPES and (sc.get("params") or {}).get("src") and not (sc["params"].get("label")):
+                sc["params"]["label"] = label
+                labelled.append(sc["id"])
+        save_yaml(sbf, sb)
+    log(f"adopted {len(added)} picture(s), labelled {len(labelled)} beat(s) as '{label}'" if label else f"adopted {len(added)} picture(s)")
+    return {"credited": added, "labelled": labelled}
 
 
 def plan_report(project) -> list[dict]:
@@ -741,7 +810,9 @@ def cli(argv=None) -> int:
     a = sp.add_parser("sfx-pack"); a.add_argument("dest", nargs="?")
     a = sp.add_parser("source"); a.add_argument("project"); a.add_argument("q"); a.add_argument("--beat"); a.add_argument("-n", type=int, default=1)
     a.add_argument("--providers"); a.add_argument("--depicts", help="say the picture truly shows this person or event: the beat is labelled `archive photo` instead of `illustrative`")
-    a.add_argument("--before", type=int)
+    a.add_argument("--before", type=int); a.add_argument("--min-width", type=int, help="skip results narrower than this many px (default: half a frame at 1.5x)")
+    a = sp.add_parser("adopt"); a.add_argument("project"); a.add_argument("--license", required=True); a.add_argument("--author", required=True)
+    a.add_argument("--source", required=True); a.add_argument("--label", choices=["archive photo", "illustrative"])
     a = sp.add_parser("plan"); a.add_argument("project")
     a = sp.add_parser("credits"); a.add_argument("project")
     ns = ap.parse_args(argv)
@@ -768,8 +839,10 @@ def cli(argv=None) -> int:
     elif ns.cmd == "sfx-pack":
         sfx_pack(ns.dest)
     elif ns.cmd == "source":
-        got = source(ns.project, ns.q, ns.beat, ns.n, ns.providers.split(",") if ns.providers else None, depicts=ns.depicts, before=ns.before)
+        got = source(ns.project, ns.q, ns.beat, ns.n, ns.providers.split(",") if ns.providers else None, depicts=ns.depicts, before=ns.before, min_width=ns.min_width)
         return 0 if got else 1
+    elif ns.cmd == "adopt":
+        adopt(ns.project, ns.license, ns.author, ns.source, ns.label)
     elif ns.cmd == "plan":
         for r in plan_report(ns.project):
             log(f"{r['beat']:<22} {r['type']:<10} {r['kind']:<8} {', '.join(r['images']) or 'NEEDS an image: assets source <dir> \"<query>\" --beat ' + r['beat']}")

@@ -55,7 +55,7 @@ def fill(template: str, ctx: dict) -> str:
 
 
 def tags_for(brief: dict, trends: dict | None = None) -> list[str]:
-    tags = [t.lstrip("#") for t in (brief.get("publish") or {}).get("tags") or brief.get("hashtags") or []]
+    tags = [str(t).lstrip("#") for t in (brief.get("publish") or {}).get("tags") or brief.get("hashtags") or []]
     for t in (trends or {}).get("recommended_tags") or []:
         if str(t).lower() not in [x.lower() for x in tags]:
             tags.append(str(t))

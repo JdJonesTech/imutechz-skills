@@ -93,6 +93,34 @@ def options() -> list[dict]:
     return [{"label": r["label"], "value": r["id"], "description": f"{r['best_for']}. {r['type']}, {r['texture']} texture, {r['mode']}, {r['layout']} layout, motion {r['motion']}"} for r in rows()]
 
 
+# ------------------------------------------------------------------ fonts must be installed (never a silent fallback)
+def missing_fonts(brief: dict | None = None) -> list[tuple[str, str]]:
+    """[(family, missing file)] for the fonts a project's theme asks for (all themes when brief is None) that npm has not installed."""
+    import re
+    css = (SKILL / "scripts" / "stage" / "fonts.css").read_text(encoding="utf-8")
+    faces = re.findall(r'font-family: "([^"]+)";.*?src: url\(([^)]+)\)', css)
+    if brief is None:
+        want = {f for t in all_themes().values() for f in t["fonts"].values()}
+    else:
+        r = resolve(brief)
+        want = set((r or {}).get("fonts", {}).values()) | set(((brief.get("brand") or {}).get("fonts") or {}).values())
+    out = []
+    for fam, url in faces:
+        if fam in want:
+            f = SKILL / url.replace("/skill/", "", 1)
+            if not f.exists() and (fam, str(f.relative_to(SKILL))) not in out:
+                out.append((fam, str(f.relative_to(SKILL))))
+    return out
+
+
+def check_fonts(brief: dict) -> None:
+    miss = missing_fonts(brief)
+    if miss:
+        fams = sorted({m[0] for m in miss})
+        raise FishError(f"theme fonts are not installed: {', '.join(fams)} (first missing file: {miss[0][1]}). The renderer would silently fall back to another typeface. "
+                        "Run `npm install` in the skill folder (it fetches every @fontsource package), then try again.")
+
+
 # ------------------------------------------------------------------ preview
 def _placeholder(path: Path, theme: dict, kind: int) -> None:
     """A generated picture (gradient, sun and hills): stands in for a real photo; nothing is copied from anywhere."""

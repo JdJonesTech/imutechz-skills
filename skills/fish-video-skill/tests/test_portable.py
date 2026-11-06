@@ -126,8 +126,9 @@ def test_explicit_opt_out_needs_the_users_request(tmp_path):
 def _credited(tmp_path, srcs, credits, scenes=None, label=None, typ="story"):
     p = tmp_path / "cp"
     (p / "assets" / "photo").mkdir(parents=True)
+    from PIL import Image
     for x in srcs:
-        (p / x).write_bytes(b"x")
+        Image.new("RGB", (900, 600), "#445566").save(p / x)
     (p / "assets" / "credits.json").write_text(json.dumps(credits))
     params = {"src": srcs[0], "lines": ["x"], **({"label": label} if label else {})}
     save_yaml(p / "brief.yaml", {"title": "t", "recipe": "story-short", "platforms": ["shorts"], "voice": {"provider": "none"}})
@@ -569,10 +570,12 @@ def test_thumbnail_command_draws_checks_picks_and_unlocks_package(tmp_path):
     assert len(side["tiles"]) == 2 and all(0 <= t[0] and t[0] + t[2] <= 1280 for t in side["tiles"])
     assert (p / "build" / "thumbnail" / "pick.json").exists()
     assert thumbs.package_gate(p) == []
-    # a changed brief makes the thumbnail stale: the gate asks for it again
+    # touching the storyboard (mtime) changes nothing; changing a thumbnail input makes it stale and names the input
     import os, time
     os.utime(p / "storyboard.yaml", (time.time() + 5, time.time() + 5))
-    assert any("changed after the thumbnail" in e and "fishvideo thumbnail" in e for e in thumbs.package_gate(p))
+    assert thumbs.package_gate(p) == []
+    b = load_yaml(p / "brief.yaml"); b["thumbnail"]["title"] = "A different headline"; save_yaml(p / "brief.yaml", b)
+    assert any("thumbnail block" in e and "fishvideo thumbnail" in e for e in thumbs.package_gate(p))
 
 
 @needs_browser
@@ -640,3 +643,229 @@ def test_story_text_and_accent_words_stay_readable_over_bright_and_dark_photos(t
                 worst[theme] = min(worst.get(theme, 99), ratio)
     bad = {k: round(v, 1) for k, v in worst.items() if v < 4.5}
     assert not bad, f"text under 4.5:1 over a {'bright' if bright else 'dark'} photo: {bad}"
+
+
+# ------------------------------------------------------------------ follow-ups from the cheaper-model test
+def test_package_refuses_failing_qa_names_the_checks_and_records_an_override(tmp_path):
+    import fishvideo
+    p = _project(tmp_path, [{"id": "a", "type": "story", "bars": 2, "params": {"src": "a.jpg"}}])
+    (p / "build" / "shorts").mkdir(parents=True, exist_ok=True)
+    (p / "build" / "shorts" / "qa.json").write_text(json.dumps({"checks": [{"check": "voice words", "status": "FAIL", "detail": "s6 heard emos"}, {"check": "codec", "status": "PASS"}]}))
+    errs = fishvideo.qa_fail_errors(p)
+    assert errs == ["shorts: QA FAIL `voice words`: s6 heard emos"]
+    with pytest.raises(FishError) as e:
+        fishvideo.qa_gate_or_override(p, None)
+    assert "voice words" in str(e.value) and "--accept-qa-fail" in str(e.value)
+    with pytest.raises(FishError):
+        fishvideo.qa_gate_or_override(p, "ok")                                        # an override needs the user's words
+    assert fishvideo.qa_gate_or_override(p, "the user accepted the homophone") == "the user accepted the homophone"
+    assert json.loads((p / "build" / "qa-override.json").read_text())["failures"] == errs
+    (p / "build" / "shorts" / "qa.json").unlink()
+    assert "no QA report" in fishvideo.qa_fail_errors(p)[0]
+
+
+def test_numeric_tags_do_not_crash_the_package():
+    import package
+    assert package.tags_for({"publish": {"tags": [1932, "emu", "#war"]}}) == ["1932", "emu", "war"]
+
+
+def test_missing_theme_fonts_stop_with_the_install_command(tmp_path, monkeypatch):
+    (tmp_path / "scripts" / "stage").mkdir(parents=True)
+    (tmp_path / "scripts" / "stage" / "fonts.css").write_text('@font-face { font-family: "Anton"; font-weight: 400; src: url(/skill/node_modules/@fontsource/anton/files/a.woff2) format("woff2"); }')
+    monkeypatch.setattr(themes, "SKILL", tmp_path)
+    with pytest.raises(FishError) as e:
+        themes.check_fonts({"theme": "bold-shorts"})
+    assert "npm install" in str(e.value) and "Anton" in str(e.value)
+    assert themes.missing_fonts({"theme": "minimal-light"}) == []                      # a theme that needs none of the missing families
+
+
+def test_story_fit_matches_the_stage_and_never_enlarges_past_the_limit():
+    js = (SKILL / "scripts" / "stage" / "scenes" / "story.js").read_text()
+    assert "cover <= 1.3" in js and "Math.min(1.5, cover)" in js and gates.MAX_UPSCALE == 1.5
+    assert gates.story_fit(1920, 1080, 1920, 1080)["mode"] == "bleed"
+    f = gates.story_fit(450, 299, 1080, 1920)
+    assert f["mode"] == "frame" and f["scale"] == 1.5
+
+
+def test_resolution_gate_fails_a_picture_too_small_for_its_use(tmp_path):
+    from PIL import Image
+    p = _credited(tmp_path, ["assets/photo/a.jpg"], [GOOD], label="illustrative")
+    Image.new("RGB", (300, 200)).save(p / "assets" / "photo" / "a.jpg")
+    m = gates.measure(p)
+    f = gates.resolution(p, m["rows"])
+    assert f and "too small" in f[0] and "--min-width" in f[0]
+    Image.new("RGB", (900, 600)).save(p / "assets" / "photo" / "a.jpg")
+    assert gates.resolution(p, gates.measure(p)["rows"]) == []
+
+
+def test_source_skips_small_results_and_does_not_reuse_a_file_from_another_beat(tmp_path, monkeypatch):
+    import assets as A
+    import fvnet
+    p = tmp_path / "sp3"
+    (p / "assets").mkdir(parents=True)
+    save_yaml(p / "brief.yaml", {"title": "t", "platforms": ["shorts"]})
+    save_yaml(p / "storyboard.yaml", {"title": "t", "bpm": 120, "scenes": [
+        {"id": "s1", "type": "story", "bars": 2, "params": {"src": "assets/photo/wikimedia-1.jpg"}},
+        {"id": "s2", "type": "story", "bars": 2, "params": {"src": "assets/photo/TODO.jpg"}}]})
+    cands = [{"id": "wikimedia-1", "risk": "safe", "_ok": True, "width": 2000}, {"id": "wikimedia-2", "risk": "safe", "_ok": True, "width": 200},
+             {"id": "wikimedia-3", "risk": "safe", "_ok": True, "width": 900}]
+    monkeypatch.setattr(A, "search", lambda *a, **k: cands)
+    got = {}
+    def fake_get(project, ids, accept_risk=False):
+        got["ids"] = ids
+        f = project / "assets" / "photo" / (ids[0] + ".jpg"); f.parent.mkdir(parents=True, exist_ok=True); f.write_bytes(b"x")
+        fvnet.add_credit(project, {"id": ids[0], "provider": "wikimedia", "file": f"assets/photo/{ids[0]}.jpg", "url": "u", "license": "CC0", "author": "a", "title": "t"})
+        return [f]
+    monkeypatch.setattr(A, "get", fake_get)
+    A.source(p, "x", beat="s2")
+    assert got["ids"] == ["wikimedia-3"]                    # not the 200 px one, not the file beat s1 already uses
+    monkeypatch.setattr(A, "search", lambda *a, **k: [{"id": "w-9", "risk": "safe", "_ok": True, "width": 100}])
+    with pytest.raises(FishError) as e:
+        A.source(p, "x", beat="s2")
+    assert "blurry" in str(e.value)
+
+
+def test_accent_keeps_the_key_words_together_not_the_filler():
+    assert thumbs.pick_accent("The Emus Won", "The") == "Emus Won"
+    assert thumbs.pick_accent("The Emus Won", "Won") == "Emus Won"
+    assert thumbs.pick_accent("GenAI Engineer Roadmap", "GenAI") == "GenAI Engineer Roadmap"
+    assert thumbs.pick_accent("The War Ended in 1945", None) == "War Ended"
+
+
+def test_check_fails_the_tag_chip_over_the_headline_and_unsharp_tiles(tmp_path):
+    head = {"text": "THE", "box": [52, 112, 200, 120], "px": 124, "color": "#ffffff", "words": 1, "grp": "head"}
+    chip = {"name": "tag", "box": [58, 52, 130, 90]}
+    side = {**_road_sidecar([GOOD_TILE, [915, 550, 118, 118]], [head]), "blocks": [chip]}
+    assert _rows(_plain(tmp_path), side)["words and chip do not overlap"]["status"] == "FAIL"          # the chip (52..142) covers the headline glyphs (126..)
+    clear = {**head, "box": [52, 140, 200, 120]}
+    assert _rows(_plain(tmp_path), {**side, "texts": [clear]})["words and chip do not overlap"]["status"] == "PASS"
+    sub = {"text": "FOR BEGINNERS", "box": [58, 200, 400, 50], "px": 44, "color": "#fff", "words": 2, "grp": "sub"}
+    assert _rows(_plain(tmp_path), {**side, "texts": [clear, sub]})["words and chip do not overlap"]["status"] == "FAIL"   # the audience line over the headline
+    blurry = {**side, "texts": [clear], "tile_px": [[200, 150], None]}
+    r = _rows(_plain(tmp_path), {**blurry, "tiles": [[700, 300, 330, 330], [915, 550, 118, 118]]})
+    assert r["tile pictures are sharp"]["status"] == "FAIL"
+    ok = _rows(_plain(tmp_path), {**side, "texts": [clear], "tile_px": [[900, 700], None]})
+    assert ok["tile pictures are sharp"]["status"] == "PASS"
+
+
+def test_a_brief_edit_unrelated_to_the_thumbnail_does_not_invalidate_it(tmp_path):
+    p = _tile_project(tmp_path)
+    b0 = load_yaml(p / "brief.yaml"); b0["platforms"] = ["youtube"]; save_yaml(p / "brief.yaml", b0)
+    (p / "build" / "thumbnail" / "variants").mkdir(parents=True)
+    f = p / "build" / "thumbnail" / "variants" / "thumb-1-road.png"
+    f.write_bytes(b"x")
+    th = p / "build" / "thumbnail"
+    (th / "variants.json").write_text(json.dumps({"variants": [{"n": 1, "layout": "road", "file": str(f.relative_to(p))}], "covers": []}))
+    inputs = json.loads(json.dumps(thumbs.thumb_inputs(p), default=str))
+    (th / "pick.json").write_text(json.dumps({"n": 1, "layout": "road", "file": str(f.relative_to(p)), "inputs": inputs}))
+    side = f.with_suffix(".json"); side.write_text(json.dumps({"layout": "road", "tiles": [GOOD_TILE, [915, 550, 118, 118]], "texts": [], "tile_px": []}))
+    from PIL import Image
+    Image.new("RGB", (1280, 720), "#0b0b0e").save(f)
+    b = load_yaml(p / "brief.yaml"); b["tone"] = "calm"; b["publish"] = {"titles": ["x"]}; save_yaml(p / "brief.yaml", b)
+    assert thumbs.package_gate(p) == []
+    b["thumbnail"]["title"] = "A New Headline"; save_yaml(p / "brief.yaml", b)
+    errs = thumbs.package_gate(p)
+    assert errs and "thumbnail block" in errs[0] and "fishvideo thumbnail" in errs[0]
+
+
+@needs_browser
+@pytest.mark.parametrize("plat,sbplat", [("youtube", "youtube"), ("shorts", "shorts")])
+def test_the_on_screen_label_passes_the_same_lint_that_flags_small_text(tmp_path, plat, sbplat):
+    from fvcore import node
+    p = _photo_project(tmp_path, "tech-dark", False)
+    b = load_yaml(p / "brief.yaml"); b["platforms"] = [plat]; save_yaml(p / "brief.yaml", b)
+    import storyboard as sbm
+    sbm.build(p, quiet=True)
+    r = node("stills.mjs", p, "--platform", plat, "--lint", capture=True, check=False)
+    if r.returncode != 0:
+        pytest.skip("no browser")
+    lint = json.loads((p / "build" / plat / "lint.json").read_text())
+    issues = lint["issues"] if isinstance(lint, dict) else lint
+    assert not [i for i in issues if "ILLUSTRATIVE" in str(i.get("text", "")).upper()], issues
+
+
+def test_series_text_and_recipe_leftovers_fail_the_gate_unless_it_is_a_series(tmp_path):
+    p = tmp_path / "ser"
+    p.mkdir()
+    save_yaml(p / "brief.yaml", {"title": "t", "publish": {"titles": ["x"]}})
+    save_yaml(p / "storyboard.yaml", {"title": "t", "bpm": 120, "scenes": [{"id": "s6", "type": "story", "bars": 2, "say": "And so it ends.", "params": {"kicker": "PART 2", "lines": ["x"]}}]})
+    assert any("series text" in e for e in iv.copy_problems(p))
+    b = load_yaml(p / "brief.yaml"); b["series"] = True; save_yaml(p / "brief.yaml", b)
+    assert not any("series text" in e for e in iv.copy_problems(p))
+    sb = recipes.storyboard("story-short")
+    assert all("note" not in s and "bars_min" in s and "bars" not in s for s in sb["scenes"]) and sb["end_card"] is False
+    assert "PART 2" not in json.dumps(sb)
+
+
+def test_story_short_does_not_warn_about_the_end_card():
+    import storyboard as sbm
+    sb = recipes.storyboard("story-short")
+    for s in sb["scenes"]:
+        s["params"] = {}; s["say"] = "x"
+    cfg = {"brief": {"recipe": "story-short"}}
+    assert not any("end` card" in w for w in sbm.validate(sb, cfg)[1])
+    sb2 = recipes.storyboard("roadmap-explainer"); sb2.pop("end_card", None)
+    assert any("end` card" in w for w in sbm.validate({**sb2, "scenes": sb2["scenes"][:-1]}, {"brief": {"recipe": "roadmap-explainer"}})[1])
+
+
+def test_new_with_a_recipe_takes_length_and_language_from_the_prompt_then_the_recipe(tmp_path):
+    import argparse, fishvideo
+    a = argparse.Namespace(dir=str(tmp_path / "np"), prompt="A 25 second YouTube Short about emus, American English", url=None, ref=None, platforms=None, length=None, lang=None,
+                           title=None, recipe="story-short", force=False)
+    p = fishvideo.cmd_new(a)
+    b = load_yaml(p / "brief.yaml")
+    assert b["length"] == 25 and b["language"] == "en-US" and "history" in b["audience"] and "developers" not in b["audience"]
+
+
+def test_interview_summary_shows_the_real_preset_and_every_question_recommends_something():
+    brief = {"title": "t", "voice": {"provider": "chatterbox", "language": "en-US", "studio": {"style": "chatterbox-soft", "gender": "male", "pace": "natural"}, "fallback": {"voice": "en-US-AndrewMultilingualNeural"}}}
+    import tempfile, pathlib
+    d = pathlib.Path(tempfile.mkdtemp()); save_yaml(d / "brief.yaml", brief)
+    txt = iv.summary(d)
+    assert "chatterbox-soft" in txt and "Andrew" not in txt
+    for r in iv.bank()["rounds"]:
+        for q in r["questions"]:
+            opts = q.get("options") or []
+            if opts or q.get("options_from"):
+                labels = [o["label"] for o in (iv._options(q, {}) if q.get("options_from") else opts)]
+                assert any("Recommended" in l for l in labels), q["id"]
+
+
+def test_budget_warns_only_for_fixed_slots_and_before_any_voice(tmp_path):
+    long = "one two three four five six seven eight nine ten eleven twelve"
+    p = _project(tmp_path, [{"id": "a", "type": "story", "bars": 2, "say": long, "params": {}}, {"id": "b", "type": "story", "bars_min": 2, "say": long, "params": {}}])
+    rows = {r["beat"]: r for r in gates.budget(p)}
+    assert rows["a"]["over"] and rows["a"]["fixed"] and rows["b"]["over"] and not rows["b"]["fixed"]
+    errs = gates.budget_errors(p)
+    assert len(errs) == 1 and "beat a" in errs[0] and "BEFORE generating the voice" in errs[0]
+
+
+def test_voice_aliases_never_change_the_cache_key():
+    S1 = vl.studio_settings({"language": "en-US"}, "chatterbox")
+    S2 = vl.studio_settings({"language": "en-US", "studio": {"aliases": {"emos": "emus"}}}, "chatterbox")
+    drop = ("ref_path", "aliases", "verify")
+    assert {k: v for k, v in S1.items() if k not in drop} == {k: v for k, v in S2.items() if k not in drop}
+    assert "voice words" in (SKILL / "SKILL.md").read_text() and "words" in vl.SUBCOMMANDS
+
+
+def test_light_themes_keep_dimmed_content_readable():
+    for k, v in themes.all_themes().items():
+        if v["mode"] == "light":
+            assert v["layout"]["dim"] >= 0.7, k
+
+
+def test_adopt_gives_an_existing_project_a_message_and_a_one_command_fix(tmp_path):
+    import assets as A
+    from PIL import Image
+    p = _credited(tmp_path, ["assets/photo/a.jpg"], [])
+    _, f = gates.check(p)
+    assert any("EXISTING PROJECT?" in x and "assets adopt" in x and "nothing was changed" in x for x in f)
+    with pytest.raises(FishError):
+        A.adopt(p, "", "me", "https://x")
+    r = A.adopt(p, "CC0", "A. Person", "https://commons.example/a", "illustrative")
+    assert r["credited"] == ["assets/photo/a.jpg"] and r["labelled"]
+    assert gates.check(p)[1] == []
+
+
+def test_docs_say_library_of_congress_may_be_unavailable():
+    assert "may answer 403" in (SKILL / "references" / "recipes-and-themes.md").read_text()

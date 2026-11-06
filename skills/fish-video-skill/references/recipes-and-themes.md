@@ -29,6 +29,15 @@ The imagery gate runs inside `fishvideo gate` and render for every project, with
 
 Benchmarks: the coverage thresholds pass the long roadmap video and both Onoda parts. Their derived image files (`lub_*.jpg`) were never credited one by one, so under the new provenance rule they would be flagged: credit each file you ship.
 
+## Resolution, slots and leftovers
+
+- **Resolution.** A photo is shown full-bleed only when it is sharp enough for the frame (cover scale up to 1.3); otherwise the story scene frames it as a card on a blurred ground and never enlarges it past 1.5x. The gate fails a picture that cannot cover half the frame width at 1.5x (for a 1080-wide Short, under 360 px) and `assets source` skips such results and avoids reusing a file another beat already uses (`--min-width` overrides).
+- **Slots.** Recipe beats carry `bars_min`: the narration sets the real length, so a longer line stretches its beat. `fishvideo budget <dir>` shows the words each slot was designed for before any voice is generated.
+- **Leftovers.** `gate` fails on TODO, on series text (`PART 2`, `to be continued`) unless `series: true` is in the brief, and on every recipe default that was not replaced. Recipes whose last beat is an open loop set `end_card: false`, so the end-card warning does not apply.
+- **Existing projects.** Nothing is blocked silently. A project with pictures but no credit records or labels gets one message and one command: `fishvideo assets adopt <dir> --license ... --author ... --source ... --label illustrative` (you assert the facts). Projects that use their own scene types and own captures pass as before.
+- **Library of Congress** is a best-effort provider: loc.gov may answer 403 or a bot challenge, in which case the search says so and continues with Commons and NASA. Do not rely on it.
+- **Fonts.** Theme fonts come from `npm install`. `doctor`, `stills` and `render` stop with that command when any is missing, rather than silently using another typeface.
+
 ## Frame-sheet sign-off (`fishvideo signoff <dir>`)
 
 Writes `build/<p>/review/SIGNOFF.md`: a checklist and one row per scene. For each scene write what you see (4+ words, name every object) and a verdict `ok` or `fix`. `package` refuses while a row is TODO or `fix`, a box is unticked, or the file is older than the last render. QA cannot see an empty half-frame or a title card; this step makes a person (or model) look.

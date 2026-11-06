@@ -42,6 +42,7 @@ LIMITS = {
     "contrast_floor": 1.5,
     "words_ok": 6, "words_max": 9,
     "bright": (0.14, 0.82), "range": 0.45, "sat": 0.12, "vivid": 0.01,
+    "tile_upscale": 1.5,    # a tile picture is never enlarged past this (shorter side of the original)
     "tile_gap": 12,         # px at 1280 wide: the least space between a word box and a tile
     "stamp": (0.84, 0.86),   # the bottom-right corner a feed covers with the duration: x and y start, as shares of the frame
     "stamp_edges": 0.06,     # the share of edge pixels allowed in it
@@ -176,7 +177,7 @@ def render_one(project: Path, name: str, params: dict, dest: Path, *, W: int | N
         fr = load_json(res["probe"])["frames"][0]
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(fr["file"], dest)
-        return {"texts": fr["texts"], "tiles": fr.get("tiles") or [], "issues": fr["issues"], "W": tl["W"], "H": tl["H"]}
+        return {"texts": fr["texts"], "tiles": fr.get("tiles") or [], "blocks": fr.get("blocks") or [], "issues": fr["issues"], "W": tl["W"], "H": tl["H"]}
     finally:
         f.unlink(missing_ok=True)
         shutil.rmtree(pdir, ignore_errors=True)
@@ -369,6 +370,53 @@ def make(project: Path, n: int = 5) -> dict:
     return rep
 
 
+STOPWORDS = set("a an the of and or but in on at to for with by from as is are was were be been it its this that these those vs".split())
+
+
+def pick_accent(title: str, accent: str | None = None) -> str:
+    """The KEY words of a headline, kept together as one phrase: the run of non-filler words (up to 3) that contains the author's accent
+    word(s) ("Won" becomes "Emus Won"), or, when the accent is only filler ("The") or missing, the longest such run."""
+    words = re.findall(r"\S+", title or "")
+    norm = lambda w: re.sub(r"[^\w]", "", w.lower())                            # noqa: E731
+    key = [norm(w) not in STOPWORDS for w in words]
+    runs, i = [], 0
+    while i < len(words):
+        if key[i]:
+            j = i
+            while j < len(words) and key[j]:
+                j += 1
+            runs.append((i, j))
+            i = j
+        else:
+            i += 1
+    runs = [(a, min(b, a + 3)) for a, b in runs]
+    if accent:
+        aw = [norm(w) for w in accent.split() if norm(w) not in STOPWORDS]
+        for a, b in runs:
+            if aw and all(w in [norm(x) for x in words[a:b]] for w in aw):
+                return " ".join(words[a:b])
+    if runs:
+        a, b = max(runs, key=lambda r: sum(len(w) for w in words[r[0]:r[1]]))
+        return " ".join(words[a:b])
+    return " ".join(words[:2])
+
+
+def _native(project: Path, src: str) -> tuple[int, int] | None:
+    try:
+        from PIL import Image
+        with Image.open(Path(project) / src) as im:
+            return im.size
+    except Exception:                                                    # noqa: BLE001
+        return None
+
+
+def order_tiles(project: Path, tiles: list[dict]) -> list[dict]:
+    """Picture tiles: the sharpest first (it becomes the big hero tile), at most 3. Logo tiles keep their order."""
+    if not tiles or not all(t.get("src") for t in tiles):
+        return tiles
+    return sorted(tiles, key=lambda t: -min(_native(project, t["src"]) or (0, 0)))[:3]
+
+
 def thumbnail(project: Path, covers: bool = True) -> dict:
     """THE required step. Draw the house `road` thumbnail (1280x720) and a 9:16 cover per vertical platform, check them, pick them."""
     project = ensure_project(project)
@@ -394,19 +442,20 @@ def thumbnail(project: Path, covers: bool = True) -> dict:
         params["tag"] = th["kicker"]
     if not params.get("sub") and th.get("badge"):
         params["sub"] = th["badge"]
-    params["tiles"] = tiles
+    params["tiles"] = order_tiles(project, tiles)
+    params["accent"] = pick_accent(params.get("title", ""), params.get("accent"))
     out = tdir(project) / "variants"
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
     png = out / "thumb-1-road.png"
     info = render_one(project, "thumbroad", {**params, "layout": "road"}, png)
     final = save_small(png)
-    save_json(final.with_suffix(".json"), {"layout": "road", "image": None, **info})
+    save_json(final.with_suffix(".json"), {"layout": "road", "image": None, "tile_px": [_native(project, t["src"]) if t.get("src") else None for t in params["tiles"]], **info})
     items = [{"n": 1, "layout": "road", "file": str(final.relative_to(project)).replace("\\", "/"), "bytes": final.stat().st_size, "note": note, "W": info["W"], "H": info["H"]}]
     cv = make_covers(project, [{"layout": "road", "params": params}]) if covers and portrait_platforms(project) else []
     rep = {"variants": items, "covers": cv, "frames": []}
     save_json(tdir(project) / "variants.json", rep)
-    save_json(tdir(project) / "pick.json", {"n": 1, "layout": "road", "file": items[0]["file"], **({"cover": cv[0]["n"]} if cv else {})})
+    save_json(tdir(project) / "pick.json", {"n": 1, "layout": "road", "file": items[0]["file"], **({"cover": cv[0]["n"]} if cv else {}), "inputs": json.loads(json.dumps(thumb_inputs(project), default=str))})
     res = check(project, only_pick=True)
     bad = [(r["name"], c) for r in res["results"] for c in r["checks"] if c["status"] == "FAIL"]
     for nm, c in bad:
@@ -415,6 +464,23 @@ def thumbnail(project: Path, covers: bool = True) -> dict:
     if bad:
         raise FishError("the thumbnail fails its check (above). Fix the tiles or the title and run `fishvideo thumbnail <dir>` again.")
     return rep
+
+
+def thumb_inputs(project: Path) -> dict:
+    """Everything the thumbnail is drawn from. `package` asks for a new thumbnail only when one of these changed."""
+    project = Path(project)
+    cfg = project_config(project)
+    brief = cfg["brief"]
+    sbf = project / "storyboard.yaml"
+    sb = load_yaml(sbf) if sbf.exists() else {}
+    th = {**(brief.get("thumbnail") or {}), **(sb.get("thumbnail") or {})}
+    try:
+        tiles, _ = resolve_tiles(project, {}, sb, brief)
+    except FishError:
+        tiles = []
+    return {"title": th.get("title") or brief.get("title", ""), "thumbnail block": th, "theme": brief.get("theme"), "theme overrides": brief.get("theme_overrides"),
+            "tiles": [t.get("src") or t.get("slug") for t in tiles],
+            "tile files": {t["src"]: (project / t["src"]).stat().st_size for t in tiles if t.get("src") and (project / t["src"]).exists()}}
 
 
 def package_gate(project: Path) -> list[str]:
@@ -439,9 +505,11 @@ def package_gate(project: Path) -> list[str]:
         for c in r["checks"]:
             if c["status"] == "FAIL":
                 errs.append(f"thumbnail check failed ({r['name']}: {c['check']}: {c['detail']}). Fix it and run `{cmd}`")
-    stale = [f for f in ("storyboard.yaml", "brief.yaml") if (project / f).exists() and (project / f).stat().st_mtime > (td / "pick.json").stat().st_mtime + 1]
-    if stale and (project / "storyboard.yaml").exists():
-        errs.append(f"{' and '.join(stale)} changed after the thumbnail was made: run `{cmd}` again")
+    if pk.get("inputs"):
+        now = json.loads(json.dumps(thumb_inputs(project), default=str))
+        changed = [k for k in now if now[k] != pk["inputs"].get(k)]
+        if changed:
+            errs.append(f"the thumbnail's inputs changed ({', '.join(changed)}): run `{cmd}` again. (Other edits to brief.yaml or storyboard.yaml do not need a new thumbnail.)")
     return errs
 
 
@@ -477,7 +545,7 @@ def make_covers(project: Path, specs: list[dict]) -> list[dict]:
                 warn(str(e))
                 continue
             final = save_small(png)
-            save_json(final.with_suffix(".json"), {"layout": sp["layout"], **info})
+            save_json(final.with_suffix(".json"), {"layout": sp["layout"], "tile_px": [_native(project, t["src"]) if t.get("src") else None for t in params.get("tiles", [])], **info})
             res.append({"n": n, "platform": plat, "layout": sp["layout"], "file": str(final.relative_to(project)).replace("\\", "/"), "bytes": final.stat().st_size, "W": info["W"], "H": info["H"]})
             log(f"  cover {n}  {plat} {sp['layout']}  {final.name}")
     return res
@@ -550,6 +618,29 @@ def check_image(path: Path, sidecar: dict | None = None, kind: str = "thumbnail"
             for i, b in enumerate(tiles, 1):
                 if tx < b[0] + b[2] + m and tx + tw > b[0] - m and ty < b[1] + b[3] + m and ty + th_ > b[1] - m:
                     hits.append(f"{t['text'][:18]!r} / tile {i}")
+        blocks = (sidecar or {}).get("blocks") or []
+        heads = [t for t in texts_ if t.get("grp") == "head"]
+        chip_hits = []
+        for b in blocks:
+            bx, by, bw, bh = b["box"]
+            for t in heads:
+                tx, ty, tw, th_ = t["box"]
+                ty, th_ = ty + 0.12 * th_, 0.76 * th_                      # the glyphs, not the taller font box
+                if tx < bx + bw - 2 and tx + tw > bx + 2 and ty < by + bh - 2 and ty + th_ > by + 2:
+                    chip_hits.append(f"{b['name']} chip / {t['text'][:16]!r}")
+        for t in [x for x in texts_ if x.get("grp") == "sub"]:
+            tx, ty, tw, th_ = t["box"]
+            for h in heads:
+                hx, hy, hw, hh = h["box"]
+                if tx < hx + hw and tx + tw > hx and ty < hy + hh - 4 and ty + th_ > hy + 4:
+                    chip_hits.append(f"audience line / {h['text'][:16]!r}")
+        rows.append(_row("words and chip do not overlap", "FAIL" if chip_hits else "PASS", ("overlap: " + ", ".join(chip_hits[:3])) if chip_hits else "the tag chip, the headline and the audience line are clear of each other", hard=True))
+        tp = (sidecar or {}).get("tile_px") or []
+        soft = []
+        for i, (b, nat) in enumerate(zip(tiles, tp), 1):
+            if nat and b[2] > LIMITS["tile_upscale"] * min(nat):
+                soft.append(f"tile {i} is {int(b[2])} px from a {nat[0]}x{nat[1]} picture")
+        rows.append(_row("tile pictures are sharp", "FAIL" if soft else "PASS", ("enlarged past " + str(LIMITS["tile_upscale"]) + "x: " + "; ".join(soft)) if soft else "no tile picture is enlarged past " + str(LIMITS["tile_upscale"]) + "x", hard=True))
         rows.append(_row("words clear of the tiles", "FAIL" if hits else "PASS", ("words touch or overlap a tile (gap under " + str(LIMITS["tile_gap"]) + " px): " + ", ".join(hits[:4])) if hits else f"every word is at least {LIMITS['tile_gap']} px from every tile (measured from the layout boxes)", hard=True))
     # light and colour
     g = (rgb.astype(np.float32) @ np.array([0.299, 0.587, 0.114], dtype=np.float32)) / 255

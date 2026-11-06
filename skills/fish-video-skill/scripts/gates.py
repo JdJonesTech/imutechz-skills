@@ -86,7 +86,7 @@ def scene_times(project: Path, platform: str | None) -> tuple[list[dict], str]:
     for s in sb["scenes"]:
         say = s.get("say") or ""
         words = len(" ".join(say if isinstance(say, list) else [say]).split())
-        d = float(s["dur"]) if s.get("dur") else float(s["bars"]) * bar if s.get("bars") else max(2.0, words / 2.8)
+        d = float(s["dur"]) if s.get("dur") else float(s["bars"]) * bar if s.get("bars") else max(float(s.get("bars_min") or 0) * bar, words / 2.8, 2.0)
         out.append({"id": s["id"], "type": s["type"], "params": s.get("params") or {}, "t0": t, "t1": t + d})
         t += d
     return out, "storyboard"
@@ -174,6 +174,62 @@ def provenance(project: Path, rows: list[dict]) -> list[str]:
     return out
 
 
+MAX_UPSCALE = 1.5               # a picture is never enlarged past this; below the minimum frame share it is too small for its use
+MIN_FRAME_SHARE = 0.5          # the picture must cover at least this share of the frame width at MAX_UPSCALE
+
+
+def story_fit(nw: int, nh: int, W: int, H: int) -> dict:
+    """Mirror of L.storyFit in scenes/story.js: full-bleed when sharp enough (cover scale <= 1.3), else a framed card never enlarged past 1.5x."""
+    cover = max(W / nw, H / nh)
+    return {"mode": "bleed", "scale": cover} if cover <= 1.3 else {"mode": "frame", "scale": min(MAX_UPSCALE, cover)}
+
+
+def min_native_width(W: int) -> int:
+    return int(MIN_FRAME_SHARE * W / MAX_UPSCALE)
+
+
+def frame_size(project: Path, platform: str | None) -> tuple[int, int]:
+    project = Path(project)
+    tls = [f for f in sorted((project / "build").glob("timeline-*.json")) if "thumbnail" not in f.name] if (project / "build").exists() else []
+    if platform:
+        tls = [f for f in tls if f.name == f"timeline-{platform}.json"] or tls
+    if tls:
+        tl = load_json(tls[0])
+        return int(tl["W"]), int(tl["H"])
+    cfg = project_config(project)
+    import storyboard as sbm
+    prof = cfg["platforms"][sbm.platforms_of(cfg)[0]]
+    return int(prof["W"]), int(prof["H"])
+
+
+def resolution(project: Path, rows: list[dict], platform: str | None = None) -> list[str]:
+    """Rendered-scale check: a picture whose native size cannot cover MIN_FRAME_SHARE of the frame at MAX_UPSCALE is too small for its use."""
+    project = Path(project)
+    W, H = frame_size(project, platform)
+    need = min_native_width(W)
+    out = []
+    try:
+        from PIL import Image
+    except ImportError:
+        return out
+    for r in rows:
+        if r["kind"] != "image" or r["screenshot"] or r["type"] not in LABEL_TYPES:
+            continue
+        for x in r["srcs"]:
+            f = project / x
+            if not f.exists() or not x.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                continue
+            try:
+                with Image.open(f) as im:
+                    nw, nh = im.size
+            except Exception:                                                         # noqa: BLE001
+                out.append(f"beat {r['id']}: {x} cannot be read as a picture (corrupt or not an image). Fetch it again: fishvideo assets source <dir> \"<query>\" --beat {r['id']}")
+                continue
+            if nw < need:
+                out.append(f"beat {r['id']}: {x} is {nw}x{nh}, too small for a {W}x{H} frame (it would render {W * MIN_FRAME_SHARE / nw:.1f}x enlarged to fill half the width; needs {need}+ px wide). Fetch a larger one: fishvideo assets source <dir> \"<query>\" --beat {r['id']} --min-width {need}")
+    return out
+
+
 def labels(project: Path, scenes_params: dict, rows: list[dict]) -> list[str]:
     """Honesty guard: a photo of a person or event needs an `archive photo` or `illustrative` label unless its credit says it truly depicts the subject."""
     idx = credit_index(project)
@@ -224,9 +280,54 @@ def check(project: Path, platform: str | None = None, recipe: str | None = None,
     if provenance_checks:
         sbf = project / "storyboard.yaml"
         params = {s["id"]: s.get("params") or {} for s in (load_yaml(sbf).get("scenes") or [])} if sbf.exists() else {}
-        f += provenance(project, m["rows"])
-        f += labels(project, params, m["rows"])
+        pv, rs, lb = provenance(project, m["rows"]), resolution(project, m["rows"], platform), labels(project, params, m["rows"])
+        f += pv + rs + lb
+        if pv or lb:
+            f.append(f"EXISTING PROJECT? {len(pv)} image(s) lack a credit record and {len(lb)} beat(s) lack a label: nothing was changed. If the pictures really come from where you say, record them in one command: "
+                     f"`fishvideo assets adopt {project.name} --license \"<licence>\" --author \"<author>\" --source <url> --label illustrative` (you are asserting those facts; per-file records via `assets source` are better)")
     return m, f
+
+
+# ------------------------------------------------------------------ word budget per slot (before any voice is generated)
+WPS = 2.3                      # words per second the chatterbox-soft preset really delivers once pauses are counted
+
+
+def _spoken_words(say) -> int:
+    text = " ".join(say) if isinstance(say, list) else str(say or "")
+    text = re.sub(r"\{[^|}]*\|([^}]*)\}", r"\1", text)
+    return len(re.findall(r"[\w'-]+", text))
+
+
+def budget(project: Path) -> list[dict]:
+    """Per beat: the slot (bars or dur), the most words that fit, the words written, and whether it fits."""
+    project = Path(project)
+    sb = load_yaml(project / "storyboard.yaml")
+    bar = 4 * 60 / float(sb.get("bpm") or 120)
+    rows = []
+    for s_ in sb.get("scenes", []):
+        secs = float(s_["dur"]) if s_.get("dur") else float(s_["bars"]) * bar if s_.get("bars") else float(s_["bars_min"]) * bar if s_.get("bars_min") else None
+        if secs is None:
+            continue
+        say = s_.get("say")
+        words = _spoken_words(say)
+        mx = max(3, int((secs - 0.6) * WPS))
+        rows.append({"beat": s_["id"], "seconds": secs, "max_words": mx, "words": words, "fixed": bool(s_.get("bars") or s_.get("dur")), "over": words > mx and "TODO" not in str(say)})
+    return rows
+
+
+def budget_errors(project: Path) -> list[str]:
+    return [f"beat {r['beat']}: {r['words']} words do not fit its {r['seconds']:.0f} s slot (max {r['max_words']}). Shorten the line, give the beat more bars, or replace `bars:` with `bars_min:` so the narration sets the length. Do it BEFORE generating the voice (a voice run is minutes)" for r in budget(project) if r["over"] and r["fixed"]]            # a flexible (bars_min) beat just stretches
+
+
+def budget_cli(argv=None) -> int:
+    ap = argparse.ArgumentParser(prog="fishvideo budget")
+    ap.add_argument("project")
+    a = ap.parse_args(argv)
+    bad = 0
+    for r in budget(Path(a.project)):
+        log(f"{r['beat']:<20} {r['seconds']:>4.0f} s  max {r['max_words']:>2} words  written {r['words']:>2}  {'OVER' if r['over'] else 'ok'}")
+        bad += r["over"]
+    return 1 if bad else 0
 
 
 # ------------------------------------------------------------------ frame-sheet sign-off

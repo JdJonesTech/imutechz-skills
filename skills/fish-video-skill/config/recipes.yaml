@@ -22,6 +22,8 @@ recipes:
     best_for: "learning paths, 'how to become X', tool landscapes, multi-step guides (5 to 10 minutes)"
     structure: explainer
     goal: teach
+    audience: "beginners who want a clear order to learn things in"
+    language: en-US
     platforms: [youtube]
     length: 420
     themes: [tech-dark, minimal-light, editorial-serif, news-broadcast]
@@ -54,6 +56,9 @@ recipes:
     from: "video #005: the two Onoda Shorts"
     best_for: "history, true stories, people, 'the man who...' in 20 to 45 seconds; part one and part two series"
     structure: story
+    end_card: false
+    audience: "general viewers curious about history and true stories"
+    language: en-US
     goal: explain
     platforms: [shorts]
     length: 28
@@ -69,7 +74,7 @@ recipes:
       - {id: s3, type: story, bars: 2, note: "the turn: a second photo swaps in mid-scene (srcs) when the narration changes subject"}
       - {id: s4, type: story, bars: 2, note: "escalation (motif: rings or dust)"}
       - {id: s5, type: story, bars: 2, note: "the twist"}
-      - {id: s6, type: story, bars: 2, note: "open loop: motif stamp 'PART 2' or a question; no logo, no thanks"}
+      - {id: s6, type: story, bars: 2, note: "open loop: end on a question or the next fact; no logo, no thanks. Use a PART 2 stamp or kicker ONLY when brief.series is true"}
     assets:
       - {need: "one real photo per scene (6), PD or CC licensed, portrait-friendly", how: "assets source <dir> '<person or place>' --beat <id> [--depicts '<who>'] (Commons, NASA, Library of Congress)", count: 6}
       - {need: "a second photo for the scene that swaps (srcs)", how: "assets source <dir> '<query>' --beat <id>", count: 1}
@@ -79,6 +84,9 @@ recipes:
     from: "video #002: the bold cut-paper Short"
     best_for: "deadlines, facts, news, rules and lists when no licensed photo exists; huge words on flat colour"
     structure: listicle
+    end_card: false
+    audience: "general viewers who want one clear rule fast"
+    language: en-US
     goal: explain
     platforms: [shorts]
     length: 30

@@ -62,10 +62,10 @@ def storyboard(name: str) -> dict:
     r = get(name)
     scenes = []
     for b in expand(r):
-        sc = {"id": b["id"], "type": b["type"], "bars": b["bars"], "transition": "cut" if b["type"] != "footage" else "flash",
-              "say": "TODO: narration for this beat", "params": _clone(TODO_PARAMS.get(b["type"], {})), "note": b["note"]}
+        sc = {"id": b["id"], "type": b["type"], "bars_min": b["bars"], "transition": "cut" if b["type"] != "footage" else "flash",
+              "say": "TODO: narration for this beat", "params": _clone(TODO_PARAMS.get(b["type"], {}))}
         scenes.append(sc)
-    return {"title": "TODO", "bpm": 120, "style": r.get("style"), "texture": None, "scenes": scenes,
+    return {"title": "TODO", "bpm": 120, "style": r.get("style"), "texture": None, "scenes": scenes, **({"end_card": False} if r.get("end_card") is False else {}),
             "thumbnail": {"title": "TODO", "logos": []}}
 
 
@@ -77,7 +77,7 @@ def _clone(o):
 def brief_over(name: str) -> dict:
     r, sh = get(name), config()["shared"]
     pacing = {**sh["pacing"], **(r.get("pacing") or {})}
-    return {"recipe": name, "theme": r["theme"], "structure": r["structure"], "goal": r["goal"], "platforms": r["platforms"], "length": r["length"],
+    return {"recipe": name, "audience": r.get("audience"), "language": r.get("language"), "theme": r["theme"], "structure": r["structure"], "goal": r["goal"], "platforms": r["platforms"], "length": r["length"],
             "style": r.get("style"), "pacing": pacing, "mix": {**sh["mix"], **(r.get("mix") or {})}, "voice": sh["voice"], "captions": sh["captions"],
             "music": {"mood": r.get("music")}}
 
@@ -92,6 +92,13 @@ def asset_plan(name: str) -> str:
         c = a["count"]
         lines.append(f"| {a['need']} | `{a['how']}` | {n if c == 'steps' else c} |")
     g = r["gate"]
+    sec = int(60 / 120 * 4)
+    lines += ["", "## Beats (the storyboard holds none of this text, so none of it can leak into the video)", "",
+              f"Each beat has a minimum of `bars` x {sec} s at 120 BPM (`bars_min`); the narration then sets the real length, so a longer line stretches its beat instead of overflowing it. The word budget below is the length the beat was designed for: `fishvideo budget <dir>` shows it before any voice is generated.", "",
+              "| beat | scene | bars | seconds | max words | what it is for |", "|---|---|---|---|---|---|"]
+    for b in expand(r):
+        secs = b["bars"] * sec
+        lines.append(f"| {b['id']} | {b['type']} | {b['bars']} | {secs} | {max(3, int((secs - 0.6) * 2.3))} | {b['note']} |")
     lines += ["", f"Gate for this recipe: {', '.join(f'{k} {v}' for k, v in g.items())}.", ""]
     return "\n".join(lines)
 

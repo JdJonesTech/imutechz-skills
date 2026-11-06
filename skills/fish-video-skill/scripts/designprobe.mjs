@@ -18,7 +18,12 @@ import path from "node:path";
 import { launch, serve, parseArgs, writeJSON, main, isMain } from "./common.mjs";
 import { openStage, timelineSize } from "./frames.mjs";
 
-/* runs in the page: boxes of [data-tile] elements (thumbnail tiles) */
+/* runs in the page: boxes of [data-tile] elements (thumbnail tiles) and of [data-block] chips */
+function collectBlocks() {
+  const stage = document.getElementById("stage"), sb = stage.getBoundingClientRect();
+  const W = parseFloat(stage.style.width) || sb.width, scale = sb.width / W;
+  return [...document.querySelectorAll("#scenes [data-block]")].map((e) => { const r = e.getBoundingClientRect(); return { name: e.dataset.block, box: [(r.left - sb.left) / scale, (r.top - sb.top) / scale, r.width / scale, r.height / scale].map((v) => Math.round(v * 10) / 10) }; });
+}
 function collectTiles() {
   const stage = document.getElementById("stage"), sb = stage.getBoundingClientRect();
   const W = parseFloat(stage.style.width) || sb.width, scale = sb.width / W;
@@ -58,6 +63,7 @@ function collect() {
       family: cs.fontFamily.split(",")[0].replace(/["']/g, "").trim(),
       upper: cs.textTransform === "uppercase",
       free: !!e.closest("[data-free]"),
+      grp: (e.closest("[data-grp]") || { dataset: {} }).dataset.grp || "",
     });
   }
   return out;
@@ -90,9 +96,10 @@ if (isMain(import.meta.url)) main(async () => {
       else await p.evaluate((t) => window.STAGE.renderAt(t), s.t);
       const texts = await p.evaluate(collect);
       const tiles = await p.evaluate(collectTiles);
+      const blocks = await p.evaluate(collectBlocks);
       const file = path.join(outDir, `${String(s.id).replace(/[^\w.-]+/g, "_")}-${s.t.toFixed(2)}.png`);
       await p.screenshot({ path: file, ...(sc !== 1 ? { clip: { x: 0, y: 0, width: W, height: H, scale: sc } } : {}) });
-      frames.push({ scene: s.id, type: s.type, t: s.t, t0: s.t0, t1: s.t1, file, texts, tiles, issues });
+      frames.push({ scene: s.id, type: s.type, t: s.t, t0: s.t0, t1: s.t1, file, texts, tiles, blocks, issues });
     }
     const rep = { platform, W, H, scale: sc, mode, frames, errors };
     writeJSON(path.join(outDir, "probe.json"), rep);
