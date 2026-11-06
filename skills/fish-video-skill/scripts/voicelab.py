@@ -510,14 +510,14 @@ def studio_settings(voice_cfg: dict, engine: str, over: dict | None = None) -> d
         raise FishError(f"unknown voice style '{style}': one of {', '.join(c['styles'])}")
     sty, pace = c["styles"][style], _pace(st.get("pace"))
     lo, hi = c["pace_control"]["cfg_range"]
-    S = {"engine": engine, "gender": gender, "style": style, "pace": pace["name"], "target_wps": pace["wps"], "seed": int(st.get("seed", 11)),
+    S = {"engine": engine, "gender": gender, "style": style, "pace": pace["name"], "target_wps": pace["wps"], "loop": "cfg_fixed" not in sty, "seed": int(st.get("seed", 11)),
          "pause": float(st.get("pause", sty["pause"])), "pause_scale": pace["pause_scale"], "post": st.get("post", sty.get("post") or ""),
-         "air": sty.get("air"), "language": voice_cfg.get("language") or "en-US", "aliases": st.get("aliases") or {},
+         "air": sty.get("air"), "loudnorm": sty.get("loudnorm"), "edges": sty.get("edges"), "pause_range": sty.get("pause_range"), "ex_range": sty.get("exaggeration_range"), "language": voice_cfg.get("language") or "en-US", "aliases": st.get("aliases") or {},
          "mood": st.get("mood"), "verify": st.get("verify", True)}
     if engine == "chatterbox":
         S.update({"exaggeration": float(st.get("exaggeration", sty["exaggeration"])),
                   "exaggeration_fixed": "exaggeration" in (over or {}),
-                  "cfg_weight": round(min(hi, max(lo, float(st.get("cfg_weight", pace["cfg_weight"] + sty.get("cfg_shift", 0))))), 3),
+                  "cfg_weight": float(st["cfg_weight"]) if "cfg_weight" in st else float(sty["cfg_fixed"]) if "cfg_fixed" in sty else round(min(hi, max(lo, float(pace["cfg_weight"] + sty.get("cfg_shift", 0)))), 3),
                   "temperature": float(st.get("temperature", sty.get("temperature", c["defaults"]["temperature"])))})
         ref = st.get("reference")
         if ref:
@@ -586,11 +586,16 @@ def plan_line(say: str, mood: str | None, S: dict) -> list[dict]:
         text = say[a:b]
         end = text.rstrip("\"')] ")
         kind = "exclaim" if end.endswith("!") else "question" if end.endswith("?") else "ellipsis" if ("..." in text or "…" in text) else None
-        it = {"text": text, "start": a, "seed": S["seed"], "tries": 0, "history": [],
-              "pause": round(S["pause"] * S["pause_scale"] * md["pause"] + (0.1 if kind == "ellipsis" else 0.0), 3)}
+        pause = S["pause"] * S["pause_scale"] * md["pause"] + (0.1 if kind == "ellipsis" else 0.0)
+        if S.get("pause_range"):                                   # the soft preset: short sentences breathe less, questions more
+            lo_p, hi_p = S["pause_range"]
+            pause = lo_p if count_words(text) < 6 else 0.5 if kind == "question" else S["pause"]
+            pause = min(hi_p, max(lo_p, pause))
+        it = {"text": text, "start": a, "seed": S["seed"], "tries": 0, "history": [], "pause": round(pause, 3)}
         if S["engine"] == "chatterbox":
             ex = S["exaggeration"] if S.get("exaggeration_fixed") else S["exaggeration"] + md["exaggeration"] + (c["punctuation"].get(kind, 0) if kind else 0)
-            it.update({"exaggeration": round(min(0.95, max(0.25, ex)), 2), "cfg_weight": S["cfg_weight"], "temperature": S["temperature"]})
+            lo_e, hi_e = S.get("ex_range") or (0.25, 0.95)
+            it.update({"exaggeration": round(min(hi_e, max(lo_e, ex)), 2), "cfg_weight": S["cfg_weight"], "temperature": S["temperature"]})
         else:
             it.update({"voice": S["voice"], "speed": round(S["speed"], 3)})
         items.append(it)
@@ -610,7 +615,10 @@ def _make_takes(pending: list[tuple[dict, dict]], engine: str, takes: Path, wpy:
     """Generate the missing takes in ONE engine job (the model loads once), then transcribe them in one more."""
     py = engine_python(engine)
     if not engine_ready(engine):
-        raise FishError(f"{engine} is not set up: fishvideo voice setup --engine {engine}")
+        raise FishError(f"{engine} is not set up, and nothing falls back silently. " + (
+            "Chatterbox is the recommended soft voice. Install it with ONE command: `fishvideo voice setup --engine chatterbox` (about 2 GB, several minutes, CPU is enough). "
+            "Or choose another voice on purpose (`--provider edge-tts|elevenlabs|kokoro` or voice.provider in brief.yaml) and tell the user what changes: less natural pacing and no per-sentence emotion."
+            if engine == "chatterbox" else f"run `fishvideo voice setup --engine {engine}`"))
     takes.mkdir(parents=True, exist_ok=True)
     items = []
     for it, S in pending:
@@ -697,7 +705,8 @@ def _assemble(st: dict, out_wav: Path) -> dict:
     import numpy as np
     c, S, sol = config(), st["S"], st["sol"]
     s = float(sol["stretch"])
-    head, tail = float(c["edges"]["head"]), float(c["edges"]["tail"])
+    ed = S.get("edges") or c["edges"]
+    head, tail = float(ed["head"]), float(ed["tail"])
     parts, words, sr, estimated = [], [], None, False
     t = head * s                                                # everything is laid out before the stretch
     for k, it in enumerate(st["items"]):
@@ -721,7 +730,7 @@ def _assemble(st: dict, out_wav: Path) -> dict:
             parts.append(np.zeros(int(gap * sr), dtype="float32"))
             t += gap
     x = np.concatenate([np.zeros(int(head * s * sr), dtype="float32")] + parts + [np.zeros(int(tail * s * sr), dtype="float32")])
-    chain = ([f"atempo={s}"] if abs(s - 1) > 0.004 else []) + [f"aresample={SR_OUT}"] + ([S["post"]] if S.get("post") else [])
+    chain = ([f"atempo={s}"] if abs(s - 1) > 0.004 else []) + [f"aresample={SR_OUT}"] + ([S["post"]] if S.get("post") else []) + ([S["loudnorm"]] if S.get("loudnorm") else [])
     with tempfile.TemporaryDirectory() as td:
         raw, cooked = Path(td) / "raw.wav", Path(td) / "post.wav"
         write_wav(raw, x, sr)
@@ -731,7 +740,7 @@ def _assemble(st: dict, out_wav: Path) -> dict:
             raise FishError(f"post chain failed: {r.stderr[-400:]}")
         y, _ = read_wav(cooked)
     m = measure(y, SR_OUT)
-    if not m.get("silent"):                                    # one static gain per line: no pumping, same level on every line
+    if not m.get("silent") and not S.get("loudnorm"):          # one static gain per line (the soft preset is levelled by loudnorm instead): no pumping, same level on every line
         gain = 10 ** ((float(c["level"]["speech_rms_db"]) - m["rms_db"]) / 20)
         y = y * min(gain, float(c["level"]["peak_max"]) / max(m["peak"], 1e-6))
     write_wav(out_wav, y, SR_OUT)
@@ -821,7 +830,7 @@ def synth_lines(lines: list[dict], voice_cfg: dict, engine: str, outdir: Path, f
                 durs.append((b - a) / sr)
             key = "cfg_weight" if engine == "chatterbox" else "speed"
             st["sol"] = solve_pace(sum(count_words(it["text"]) for it in st["items"]), durs, [it["pause"] for it in st["items"][:-1]],
-                                   S["target_wps"], engine, st["items"][0][key])
+                                   S["target_wps"] if S.get("loop", True) else None, engine, st["items"][0][key])
             if st["sol"]["regen"] and st["rounds"] < max_rounds and not last:
                 st["rounds"] += 1
                 for it in st["items"]:

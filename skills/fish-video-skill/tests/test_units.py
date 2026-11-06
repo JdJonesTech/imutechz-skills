@@ -36,11 +36,12 @@ def test_parse_prompt_defaults_to_tour_with_a_site():
     assert b["structure"] == "product-tour" and b["platforms"] == ["youtube"]
 
 
-def test_make_brief_has_default_elevenlabs_voice():
+def test_make_brief_defaults_to_the_chatterbox_soft_voice():
     b = brief.make_brief("A 30 s explainer about rainwater")
-    assert b["voice"]["provider"] == "elevenlabs"
-    assert b["voice"]["elevenlabs"]["voice_id"] == "fydPJq00SigRIaPxWgiS"
-    assert b["voice"]["fallback"]["voice"] == "en-IN-NeerjaNeural"
+    assert b["voice"]["provider"] == "chatterbox"
+    assert b["voice"]["studio"]["style"] == "chatterbox-soft"
+    assert b["pacing"] == {"max_word_gap": 0.9, "line_gap": 0.05} and b["mix"]["music_under_voice_db"] == -12
+    assert b["voice"]["elevenlabs"]["voice_id"] == "fydPJq00SigRIaPxWgiS"      # still there for a user who picks it
     assert b["length"] == 30 and b["title"]
 
 
@@ -292,7 +293,7 @@ def test_interview_maps_answers_and_gates(tmp_path):
     save_yaml(tmp_path / "brief.yaml", brief.make_brief("A short about habits for YouTube Shorts"))
     assert interview.open_questions(tmp_path)[0]["round"] == "purpose"
     ans = {"topic": "Why habits stick", "goal": "story", "audience": "curious beginners", "platforms": '["shorts"]',
-           "length": "25", "style": "glow-metaphor", "hook": "visual", "palette": "mono-glow", "mode": "auto", "type": "grotesk",
+           "length": "25", "style": "glow-metaphor", "hook": "visual", "theme": "none", "palette": "mono-glow", "mode": "auto", "type": "grotesk",
            "texture": "grain", "voice_energy": "cinematic", "voice": "christopher", "music": "cinematic-swell", "sfx": "rich",
            "real_assets": "none", "screen": "none", "points": "cue\nroutine\nreward", "cta": "follow", "language": "en-US",
            "captions": "pop", "thumbnail": "frame", "checkpoints": '["final"]', "keys_have": '[]'}

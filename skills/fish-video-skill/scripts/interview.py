@@ -66,6 +66,14 @@ def _options(q: dict, answers: dict) -> list[dict]:
     st = styles()
     if src == "styles":
         return [{"label": v["label"][:40], "value": k, "description": f"{v['look']}. Best for {v['best_for']}"} for k, v in st["styles"].items()]
+    if src == "themes":
+        import themes
+        ths = themes.all_themes()
+        rec = next((k for k, v in ths.items() if v.get("style") == answers.get("style")), None) or "tech-dark"
+        out = [{**o, "label": o["label"] + (" (Recommended)" if o["value"] == rec else "")} for o in themes.options()]
+        out.sort(key=lambda o: "(Recommended)" not in o["label"])
+        out.append({"label": "No theme", "value": "none", "description": "Keep the chosen style's own palette, fonts and texture (the classic look)"})
+        return out
     if src == "palettes":
         rec = (st["styles"].get(answers.get("style")) or {}).get("defaults", {}).get("palette")
         out = []
@@ -205,6 +213,17 @@ def apply(brief: dict) -> dict:
     cta_text = {"follow": "Follow for more", "comment": "Comment below"}.get(a.get("cta"))
     if cta_text and not (brief.get("cta") or {}).get("text"):
         brief.setdefault("cta", {})["text"] = cta_text
+    if a.get("theme") in (None, "", "none"):
+        if a.get("theme") == "none":
+            brief.pop("theme", None)
+    else:
+        import themes
+        brief["theme"] = a["theme"]
+        themes.get(a["theme"])
+        pal_hex = a.get("palette") if isinstance(a.get("palette"), str) and "#" in a["palette"] else None
+        if pal_hex:
+            hexes = re.findall(r"#[0-9a-fA-F]{6}", pal_hex)
+            brief["theme_overrides"] = {"colors": {k: h for k, h in zip(["bg", "ink", "accent", "accent2"], hexes)}}
     style = st["styles"].get(a.get("style") or brief.get("style") or "")
     d = (style or {}).get("defaults", {})
     if style:
@@ -222,6 +241,9 @@ def apply(brief: dict) -> dict:
             c = brief.setdefault("brand", {}).setdefault("colors", {})
             for key, h in zip(["bg", "ink", "accent", "accent2"], hexes):
                 c[key] = h
+    if brief.get("theme"):
+        import themes
+        themes.apply_to_brief(brief)           # the theme's colours, fonts, texture and caption look beat the style palette
     mood = st["music_moods"].get(a.get("music") or d.get("music") or "")
     if mood:
         brief["score"] = {**(brief.get("score") or {}), **{k: v for k, v in mood["score"].items() if k != "bpm"}}
@@ -285,6 +307,14 @@ def _apply_voice(brief: dict, a: dict) -> None:
         near = next((x for x in vc["voices"].get(lang, []) if x["provider"] == "edge"), None)
         if near:
             voice["fallback"] = {"provider": "edge-tts", "voice": near["voice"], "rate": pre["edge_rate"], "pitch": pre["edge_pitch"]}
+    elif v["provider"] == "chatterbox":          # the recommended soft preset (config/voicelab.yaml -> chatterbox-soft)
+        voice["provider"] = "chatterbox"
+        voice["studio"] = {"gender": "male", "style": "chatterbox-soft", "pace": "natural"}
+        voice["delivery"] = "soft"
+        pac = brief.setdefault("pacing", {})
+        pac.update({"max_word_gap": 0.9, "line_gap": 0.05})
+        brief.setdefault("mix", {})["music_under_voice_db"] = -12
+        return
     elif v["provider"] == "kokoro":
         voice["provider"] = "kokoro"
         voice["kokoro"] = {"voice": v["voice"], "speed": round(pre["wps"] / 2.9, 2)}
@@ -378,6 +408,16 @@ def gate(project: Path, stage: str = "render", force: bool = False) -> list[str]
         errs.append("interview: not confirmed: read `fishvideo interview <dir> --summary` to the user, then `--confirm`")
     if stage == "render":
         errs += copy_problems(project)
+        try:
+            import gates
+            _m, fails = gates.check(project)
+        except FishError as e:
+            _m, fails = None, [str(e)]
+        if brief.get("recipe"):
+            errs += [f"imagery gate ({brief['recipe']}): {x}" for x in fails]
+        else:
+            for x in fails:
+                warn(f"imagery (no recipe, advisory): {x}")
         need = set((brief.get("approvals") or {}).get("required") or [])
         got = load_json(project / "approvals.json", default={}) if (project / "approvals.json").exists() else {}
         for n in ("storyboard", "stills"):
@@ -425,6 +465,15 @@ def audition(project: Path) -> list[dict]:
                                                                      "voice_settings": {"stability": pre["stability"], "similarity_boost": 0.8, "style": pre["eleven_style"], "use_speaker_boost": True}}}, key)
             elif v["provider"] == "kokoro":
                 audio = voicemod.kokoro_audio(line, {"voice": v["voice"], "speed": round(pre["wps"] / 2.9, 2)})
+            elif v["provider"] == "chatterbox":
+                import voicelab
+                if not voicelab.engine_ready("chatterbox"):
+                    res.append({"id": v["id"], "skipped": "Chatterbox is not installed: run `fishvideo voice setup --engine chatterbox` (one command), then audition again. Not substituted by another voice."})
+                    continue
+                f = out / f"{v['id']}.wav"
+                voicelab.say(line, f, "chatterbox", {"gender": "male", "style": "chatterbox-soft"}, lang, out / "_chatterbox")
+                res.append({"id": v["id"], "label": v["label"], "file": str(f)})
+                continue
             else:
                 continue
             f.write_bytes(audio)

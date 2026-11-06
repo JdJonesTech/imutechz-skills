@@ -26,6 +26,7 @@ from pathlib import Path
 from fvcore import (FishError, deep_merge, ensure_project, load_json, load_yaml, log, main_guard, mmss,
                     project_config, save_json, save_yaml, sha1, slugify, warn)
 from captions import chunk_words
+import themes
 
 SCENE_TYPES = {"title", "kinetic", "bullets", "stat", "chart", "diagram", "whiteboard", "steps", "quote",
                "compare", "terminal", "tour", "image", "end", "thumbnail",
@@ -33,10 +34,12 @@ SCENE_TYPES = {"title", "kinetic", "bullets", "stat", "chart", "diagram", "white
                "collage", "split", "cone", "coinflip", "orbit", "neonline", "glowshape", "tunnel", "ringbloom",
                "footage", "stepcard", "meme",
                # long-format roadmap explainers
-               "roadmap", "pile"}
+               "roadmap", "pile",
+               # image-led and word-synced scenes (scenes/story.js)
+               "story", "statement", "cards", "flow", "site", "bold"}
 TRANSITIONS = {"fade", "cut", "wipe", "zoom", "flash", "defocus", "flip", "flood", "dip", "iris", "through", "world", "match"}
 CAPTION_STYLES = {"pop", "karaoke", "minimal", "none"}
-TEXTURES = {"paper", "grain", "clean", "grid", "blueprint"}
+TEXTURES = {"paper", "grain", "clean", "grid", "blueprint", "halftone", "scanlines", "notebook", "dots", "sunburst", "stripes", "film"}
 # scene-level camera rig fields, passed through to the timeline (see references/scene-catalogue.md, Camera)
 CAMERA_KEYS = ("camera", "camera_from", "camera_shake", "camera_shake_on", "camera_blend", "dof", "dof_max", "dof_text", "accent", "carry", "lead")
 PAIR = re.compile(r"\{([^|}]+)\|([^}]+)\}")
@@ -376,6 +379,13 @@ def resolve(project: Path, platform: str, cfg: dict, sb: dict, clips: dict | Non
     brand = dict(brief.get("brand") or {})
     brand["name"] = brand.get("name") or brief.get("title", "")
     theme = {"colors": brand.get("colors") or {}, "fonts": brand.get("fonts") or {}, "font_files": brand.get("font_files") or [], "mode": brand.get("mode", "light")}
+    th = themes.resolve(brief)            # `theme: <id>` in the brief: colours, fonts, texture, layout tokens and caption look (config/themes.yaml)
+    if th:
+        theme = {**theme, "colors": th["colors"], "fonts": th["fonts"], "mode": th["mode"], "layout": th["layout"], "captions": th["captions"], "id": th["id"]}
+        if th["texture"] and not texture:
+            texture = th["texture"]
+        if th["caption_style"] and not (sb.get("captions") or {}).get("style") and (brief.get("captions") or {}).get("style") in (None, "karaoke"):
+            cap_style = th["caption_style"]
     used_shots = sorted({(s["params"] or {}).get("shot") for s in out_scenes if s["type"] in ("tour", "thumbnail") and (s["params"] or {}).get("shot") in shots})
     score = deep_merge(cfg["score"], sb.get("score") or {})
     return {

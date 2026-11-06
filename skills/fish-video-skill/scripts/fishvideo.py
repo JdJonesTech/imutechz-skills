@@ -1,6 +1,6 @@
 """fishvideo: make a polished animated explainer / promo video from one brief.
 
-    fishvideo new <dir> --prompt "..." [--url URL] [--ref VIDEO] [--platforms youtube,linkedin] [--length 60] [--lang en-IN]
+    fishvideo new <dir> [--recipe roadmap-explainer|story-short|bold-short] --prompt "..." [--url URL] [--ref VIDEO] [--platforms youtube,linkedin] [--length 60] [--lang en-IN]
     fishvideo research <dir> [--url URL ...] [--from-json results.json]
     fishvideo reference <dir> [--src file|youtube-url]
     fishvideo script <dir> [--force]          scaffold storyboard.yaml (if missing) + write script.md
@@ -35,6 +35,12 @@
   Frame and thumbnail design (references/frame-design.md):
     fishvideo frame <sheet|lint|guides|variants|palette|compare> ...    review, measure and try looks on rendered stills
     fishvideo thumb <make|check|sheet|pick|cutout> ...                  designed 1280x720 thumbnails, legibility checks, mock feed
+  Required before package:
+    fishvideo thumbnail <dir>      the house thumbnail (headline + logo or picture tiles on a glowing road), checked; `package` refuses without it (--no-thumbnail only if the user asks)
+  Quality gates (measured; a recipe makes them hard):
+    fishvideo recipes | gates <dir> | signoff <dir> [--check]    formats, the imagery gate, the frame-sheet checklist
+  Themes (config/themes.yaml):
+    fishvideo themes [show <id> | preview [--out DIR] [--only a,b] | apply <dir> <id>]    list the looks, render one gallery image per theme
   Finish:
     fishvideo clean <dir> [--yes] [--keep-voice]   remove intermediates (only after the user approves + agrees)
 
@@ -66,13 +72,21 @@ import interview as ivmod
 
 PASSTHRU = {"yt": "youtube", "trends": "trends", "assets": "assets", "screenrec": "screenrec", "dissect": "dissect", "sfx": "sfx", "clean": "clean",
             "review": "review", "voiceover": "voiceover", "beats": "beats", "memes": "memes", "sounds": "sounds",
-            "frame": "design", "thumb": "thumbs"}
+            "frame": "design", "thumb": "thumbs", "themes": "themes", "recipes": "recipes", "gates": "gates", "signoff": "gates", "thumbnail": "thumbs"}
 
 
 def passthru(cmd: str, argv: list[str]) -> int:
     import importlib
     mod = importlib.import_module(PASSTHRU[cmd])
+    if cmd == "thumbnail":
+        return mod.thumbnail_cli(argv) or 0
+    if cmd == "signoff":
+        return mod.signoff_cli(argv) or 0
     return mod.cli(argv) or 0
+
+
+def brief_recipe(project: Path):
+    return (project_config(project)["brief"]).get("recipe")
 
 
 def gate_or_fail(project: Path, stage: str, force: bool = False) -> None:
@@ -101,7 +115,19 @@ def cmd_new(a) -> Path:
         over["language"] = a.lang
     if a.title:
         over["title"] = a.title
-    return briefmod.new_project(a.dir, a.prompt or "", force=a.force, **over)
+    if getattr(a, "recipe", None):
+        import recipes
+        over = {**recipes.brief_over(a.recipe), **{k: v for k, v in over.items() if v not in (None, "", [], {})}}
+    proj = briefmod.new_project(a.dir, a.prompt or "", force=a.force, **over)
+    if getattr(a, "recipe", None):
+        recipes.create(proj, a.recipe)
+        import themes
+        b = load_yaml(proj / "brief.yaml")
+        themes.apply_to_brief(b)
+        from fvcore import save_yaml
+        save_yaml(proj / "brief.yaml", b)
+        log(f"theme {b['theme']}; other themes for this recipe: {', '.join(t for t in recipes.get(a.recipe)['themes'] if t != b['theme'])}. Gallery: fishvideo themes preview")
+    return proj
 
 
 def cmd_capture(project: Path, shots: list[str]) -> None:
@@ -179,7 +205,7 @@ def cmd_all(a) -> int:
     try:
         import thumbs
         if not (project / "build" / "thumbnail" / "variants.json").exists():
-            thumbs.make(project)
+            thumbs.thumbnail(project)
         else:
             log("thumbnail variants up to date (fishvideo thumb make to redraw)")
     except FishError as e:
@@ -187,6 +213,11 @@ def cmd_all(a) -> int:
     step("qa")
     reps = qamod.qa(project, plats, lint=not a.no_lint)
     step("package")
+    if not a.no_gate:
+        import thumbs
+        te = thumbs.package_gate(project)
+        if te:
+            raise FishError("package: the thumbnail step is not done:\n  - " + "\n  - ".join(te))
     dest = pkgmod.package(project, name=a.name)
     status = "FAIL" if any(r["status"] == "FAIL" for r in reps) else "PASS"
     log(f"\nall done in {(time.time() - t0) / 60:.1f} min: QA {status} -> {dest}")
@@ -205,6 +236,12 @@ def cmd_doctor(keys: bool = False) -> int:
             ok = False
             log(f"  MISS  {name:<14} {e}")
 
+    def _chatterbox():
+        import voicelab
+        if not voicelab.engine_ready("chatterbox"):
+            raise RuntimeError("not installed: the recommended soft voice needs `fishvideo voice setup --engine chatterbox` (one command); until then pick another voice on purpose")
+        return "installed (recommended soft voice: style chatterbox-soft)"
+    chk("chatterbox", _chatterbox)
     chk("python", lambda: sys.version.split()[0])
     chk("pyyaml", lambda: __import__("yaml").__version__)
     chk("edge-tts", lambda: __import__("edge_tts").__version__)
@@ -265,6 +302,7 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--length", type=float, default=None)
         p.add_argument("--lang", default=None)
         p.add_argument("--title", default=None)
+        p.add_argument("--recipe", default=None, help="roadmap-explainer | story-short | bold-short (fishvideo recipes)")
         p.add_argument("--force", action="store_true")
         if name == "all":
             p.add_argument("--platform", default=None, help="render only these (comma list)")
@@ -294,6 +332,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--fast", action="store_true"); p.add_argument("--no-voice", action="store_true"); p.add_argument("--no-music", action="store_true")
     p = proj("qa"); p.add_argument("--platform", default=None); p.add_argument("--no-lint", action="store_true"); p.add_argument("--preview", action="store_true")
     p = proj("package"); p.add_argument("--name", default=None); p.add_argument("--out", default=None)
+    p.add_argument("--no-thumbnail", action="store_true", help="only when the user explicitly asks for no thumbnail")
     p.add_argument("--no-gate", action="store_true")
     p = sub.add_parser("doctor"); p.add_argument("--keys", action="store_true", help="explain how to get each missing key")
     p = proj("gate"); p.add_argument("--stage", default="render", choices=["script", "render"])
@@ -390,6 +429,16 @@ def cli(argv=None) -> int:
         reps = qamod.qa(project, a.platform.split(",") if a.platform else None, not a.no_lint, a.preview)
         return 1 if any(r["status"] == "FAIL" for r in reps) else 0
     elif a.cmd == "package":
+        if not a.no_thumbnail and not a.no_gate:
+            import thumbs
+            te = thumbs.package_gate(project)
+            if te:
+                raise FishError("package: the thumbnail step is not done:\n  - " + "\n  - ".join(te))
+        if brief_recipe(project) and not a.no_gate:
+            import gates
+            e = gates.signoff_errors(project)
+            if e:
+                raise FishError("package: the frame-sheet sign-off is not done:\n  - " + "\n  - ".join(e))
         pkgmod.package(project, Path(a.out) if a.out else None, a.name)
     return 0
 

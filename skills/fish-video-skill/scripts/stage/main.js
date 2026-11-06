@@ -38,6 +38,8 @@
     for (const s of TL.custom_scenes || []) await loadScript("/project/" + s.replace(/^\/+/, ""));
     const fams = ['400 20px "Inter"', '600 20px "Inter"', '700 20px "Inter"', '800 20px "Inter"', '900 20px "Inter"', '400 20px "JetBrains Mono"', '600 20px "JetBrains Mono"', '700 20px "JetBrains Mono"', '500 20px "Fraunces"', 'italic 400 20px "Fraunces"', '700 20px "Caveat"', '600 20px "Caveat"'];
     if (TL.lang && /^(hi|mr|ne|sa)/.test(TL.lang)) fams.push('400 20px "Noto Sans Devanagari"', '700 20px "Noto Sans Devanagari"');
+    /* theme fonts (config/themes.yaml): load the weights a scene may use before the first frame */
+    for (const f of Object.values((TL.theme && TL.theme.fonts) || {})) for (const w of [400, 500, 700, 900]) fams.push(`${w} 20px "${f}"`);
     await Promise.all(fams.map((f) => document.fonts.load(f).catch(() => {})));
     await document.fonts.ready;
     if ((TL.shots || []).length) await L.loadMeta(TL.shots);
@@ -58,7 +60,8 @@
       const u = await L.texture("paper", W, H);
       bg.innerHTML = `<img class="tex" alt="" src="${u}" style="position:absolute;left:0;top:0;width:${W}px;height:${H}px">`;
       await bg.firstChild.decode().catch(() => {});
-    } else if (TEX === "grid" || TEX === "blueprint") bg.innerHTML = `<div class="abs" style="inset:0;${L.textureCSS(TEX, C)}"></div>${TEX === "blueprint" ? '<div class="abs" style="inset:0;background:radial-gradient(ellipse at 50% 45%, transparent 50%, rgba(0,0,0,.35) 100%)"></div>' : ""}`;
+    } else if (L.TEXTURES_CSS.includes(TEX) && TEX !== "grid" && TEX !== "blueprint") bg.innerHTML = `<div class="abs" style="inset:0;${L.textureCSS(TEX, C)}"></div>`;
+    else if (TEX === "grid" || TEX === "blueprint") bg.innerHTML = `<div class="abs" style="inset:0;${L.textureCSS(TEX, C)}"></div>${TEX === "blueprint" ? '<div class="abs" style="inset:0;background:radial-gradient(ellipse at 50% 45%, transparent 50%, rgba(0,0,0,.35) 100%)"></div>' : ""}`;
     else if (TEX === "clean" || TEX === "grain") bg.innerHTML = wash;
     else bg.innerHTML = TL.background === "plain" ? "" : `${wash}${TL.background === "dots" || !TL.background ? '<div class="dots"></div>' : ""}`;
     layers.scenes = el("div", "", stage); layers.scenes.id = "scenes";
