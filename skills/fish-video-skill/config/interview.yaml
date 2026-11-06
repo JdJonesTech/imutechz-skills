@@ -111,7 +111,7 @@ rounds:
         header: Theme
         question: "Which theme (type pairing, texture, layout and motion together)? Show the options; `fishvideo themes preview` renders a gallery image of each. A recipe names its recommended themes."
         maps_to: theme
-        options_from: themes     # config/themes.yaml; the first option is the recommendation, "No theme" keeps the style's own palette
+        options_from: themes     # config/themes.yaml; the first option is the recommendation (the trend-derived theme from `fishvideo trends --derive-theme` when present; built-ins are fallbacks), "No theme" keeps the style's own palette
       - id: palette
         required: true
         header: Colours

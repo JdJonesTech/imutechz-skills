@@ -104,7 +104,7 @@ Spawn these as parallel subagents. Model routing: **haiku** for fetch and lookup
 | Task | Command | Agent |
 |---|---|---|
 | Facts and sources | web search, then `fishvideo research <dir> --url ...` → `research/facts.md` | haiku |
-| Trends | `fishvideo trends <dir> --topic "<topic>" --region <IN/US>` → `research/trends.md` (title formulas, tags, hooks, ideal length from what is ranking now) | haiku |
+| Trends | `fishvideo trends <dir>` (required, enforced by `gate`): recent results for the topic in its format, ranked by views per day, Shorts separate → `research/trends.json`, `trends.md` and the thumbnail contact sheet `trends-contact.jpg`; open the sheet, write the Analysis and `direction:` in `trends.md`; `--derive-theme` builds a project theme from the thumbnails; `--unavailable "<reason>"` only if search is down. Analysis only: never used in the video, committed or packaged | haiku |
 | YouTube look-ups | `fishvideo yt search "<q>" -n 20 [--recent-days 30]`, `yt info`, `yt subs`, `yt suggest` | haiku |
 | Reference dissection (each link the user gave, plus 1–2 top trending examples in the chosen style) | `fishvideo yt download <url> --purpose reference --project <dir>`, then `fishvideo dissect <dir>/reference/<file>.mp4 --out <dir>/reference/dissect --fps 4 [--vtt subs.vtt]`. Read **every** sheet, the spectrogram and `timeline.md`, then write `reference/analysis.md` with the nine sections of [reference-video analysis](references/reference-video-analysis.md) | sonnet (vision) |
 
@@ -333,5 +333,5 @@ Never delete without that yes.
   - [website-tour capture](references/website-tour-capture.md)
   - [storyboard templates](references/storyboard-templates.md)
 - `sfx/library/`: Kenney CC0 interface, impact and UI packs plus `index.json`.
-- `examples/`: `why-you-cant-put-it-down/` (the full narrated target: watch `sample-short-720p.mp4` and read its `storyboard.yaml`), `showcase/` (style demo: collage, split, neon, coin flip, glow tunnel) and `imutechz-explainer/` (a v1 production storyboard; structure only, never reuse its lines).
+- `examples/`: `genai-roadmap-long/` (long roadmap explainer, 44 s excerpt), `onoda-story-series/` (two photo-led story Shorts) and `gta6-short/` (typographic Short). Each has a README with its recipe, licences and gate result; watch the sample video and read the `storyboard.yaml`. Structure only, never reuse their lines.
 - `tests/`: unit tests (`test_units.py`, `test_tools.py`), node tests, and e2e smoke renders.

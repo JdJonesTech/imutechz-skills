@@ -60,7 +60,7 @@ def _set(d: dict, path: str, value) -> None:
     cur[keys[-1]] = value
 
 
-def _options(q: dict, answers: dict) -> list[dict]:
+def _options(q: dict, answers: dict, project: Path | None = None) -> list[dict]:
     src = q.get("options_from")
     if not src:
         return q.get("options") or []
@@ -73,6 +73,14 @@ def _options(q: dict, answers: dict) -> list[dict]:
         rec = next((k for k, v in ths.items() if v.get("style") == answers.get("style")), None) or "tech-dark"
         out = [{**o, "label": o["label"] + (" (Recommended)" if o["value"] == rec else "")} for o in themes.options()]
         out.sort(key=lambda o: "(Recommended)" not in o["label"])
+        import trends
+        dv = trends.derived_theme(project) if project else None
+        if dv:                                    # derived from this run's live thumbnails: offered first; the built-in ones are fallbacks
+            for o in out:
+                o["label"] = o["label"].replace(" (Recommended)", " (fallback)")
+            c = dv["colors"]
+            out.insert(0, {"label": "Trend-derived (Recommended)", "value": "derived",
+                           "description": f"Palette pooled from this run's trending thumbnails ({dv['mode']}; bg {c['bg']} accent {c['accent']} accent2 {c['accent2']}); type and texture from {dv['base']}"})
         out.append({"label": "No theme", "value": "none", "description": "Keep the chosen style's own palette, fonts and texture (the classic look)"})
         return out
     if src == "palettes":
@@ -133,7 +141,7 @@ def open_questions(project: Path) -> list[dict]:
             item = {k: q[k] for k in ("id", "header", "question", "required") if k in q}
             item["multiSelect"] = bool(q.get("multi"))
             item["free_text"] = bool(q.get("free_text"))
-            opts = _options(q, answers)
+            opts = _options(q, answers, project)
             if opts:
                 item["options"] = opts
             prefill = _get(brief, q["maps_to"]) if q.get("maps_to") else None
@@ -175,7 +183,7 @@ def record(project: Path, answers: dict) -> dict:
             continue
         store[k] = v
     brief["interview"] = iv
-    apply(brief)
+    apply(brief, project)
     save_yaml(project / "brief.yaml", brief)
     return store
 
@@ -194,7 +202,7 @@ def _store_keys(text: str) -> None:
     log(f"stored {n} key(s) in {env} (gitignored; never printed)")
 
 
-def apply(brief: dict) -> dict:
+def apply(brief: dict, project: Path | None = None) -> dict:
     """Map answers into the brief + style defaults. Idempotent."""
     a = (brief.get("interview") or {}).get("answers") or {}
     st = styles()
@@ -223,8 +231,16 @@ def apply(brief: dict) -> dict:
             brief.pop("theme", None)
     else:
         import themes
-        brief["theme"] = a["theme"]
-        themes.get(a["theme"])
+        if a["theme"] == "derived":
+            import trends
+            dv = trends.derived_theme(project) if project else None
+            if not dv:
+                raise FishError("theme 'derived' needs research/theme.json: run `fishvideo trends <dir> --derive-theme` first")
+            brief["theme"] = dv["base"]
+            brief["theme_overrides"] = {"colors": dict(dv["colors"])}
+        else:
+            brief["theme"] = a["theme"]
+        themes.get(brief["theme"])
         pal_hex = a.get("palette") if isinstance(a.get("palette"), str) and "#" in a["palette"] else None
         if pal_hex:
             hexes = re.findall(r"#[0-9a-fA-F]{6}", pal_hex)
@@ -414,6 +430,59 @@ def copy_problems(project: Path) -> list[str]:
     return probs
 
 
+def _example_media_hashes() -> dict:
+    import hashlib
+    out = {}
+    for p in (SKILL / "examples").rglob("*"):
+        if p.is_file() and p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4"):
+            out[hashlib.sha256(p.read_bytes()).hexdigest()] = str(p.relative_to(SKILL / "examples"))
+    return out
+
+
+def example_problems(project: Path) -> list[str]:
+    """Examples are past outputs: no example image or video file may appear inside a new project."""
+    project = Path(project).resolve()
+    if (SKILL / "examples").resolve() in project.parents:
+        return []                                  # the examples themselves (some use custom scenes)
+    probs = []
+    import hashlib
+    hashes = _example_media_hashes()
+    if hashes:
+        for p in list(project.glob("assets/**/*")) + list(project.glob("out/**/thumbnail*")):
+            if p.is_file() and p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4"):
+                h = hashlib.sha256(p.read_bytes()).hexdigest()
+                if h in hashes:
+                    probs.append(f"example file reused: {p.relative_to(project)} is identical to examples/{hashes[h]}: collect your own licensed images; examples are past outputs, never assets")
+    probs += sameness_problems(project)
+    return probs
+
+
+def sameness_problems(project: Path) -> list[str]:
+    """The scene-type sequence must not be identical to the recipe skeleton or to a bundled example: the direction must change something."""
+    project = Path(project)
+    sbf = project / "storyboard.yaml"
+    if not sbf.exists():
+        return []
+    seq = [str(sc.get("type")) for sc in (load_yaml(sbf) or {}).get("scenes", [])]
+    if len(seq) < 3:
+        return []
+    same = []
+    recipe = (load_yaml(project / "brief.yaml") or {}).get("recipe") if (project / "brief.yaml").exists() else None
+    if recipe:
+        try:
+            import recipes
+            if seq == [str(sc.get("type")) for sc in recipes.storyboard(recipe).get("scenes", [])]:
+                same.append(f"the `{recipe}` recipe skeleton")
+        except FishError:
+            pass
+    for exf in sorted((SKILL / "examples").glob("**/storyboard.yaml")):
+        if seq == [str(sc.get("type")) for sc in (load_yaml(exf) or {}).get("scenes", [])]:
+            same.append(f"examples/{exf.parent.relative_to(SKILL / 'examples')}")
+    if same:
+        return [f"scene sequence is identical to {', '.join(same)}: apply the trend `direction` (research/trends.md) so the beat order, scene types or layouts change for this video"]
+    return []
+
+
 def gate(project: Path, stage: str = "render", force: bool = False) -> list[str]:
     project = ensure_project(project)
     brief, iv = state(project)
@@ -426,6 +495,14 @@ def gate(project: Path, stage: str = "render", force: bool = False) -> list[str]
     if brief.get("recipe") and stage in ("script", "render"):
         import gates
         errs += gates.budget_errors(project) if (project / "storyboard.yaml").exists() else []
+    if (project / "storyboard.yaml").exists():
+        errs += example_problems(project)
+    if stage in ("script", "render"):
+        import trends
+        errs += trends.gate_problems(project)
+        why = trends.unavailable_reason(project)
+        if why:
+            warn(f"trend research was UNAVAILABLE ({why}): built-in themes used; say so in the final report")
     if stage == "render":
         errs += copy_problems(project)
         try:

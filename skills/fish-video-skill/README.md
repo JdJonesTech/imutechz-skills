@@ -62,7 +62,9 @@ A weaker model on another device can now get close to the best videos, because t
   - QA measures the balance.
 - **A tidy package:** `out/<date>_<slug>/` with `video/`, `captions/`, `thumbnails/`, `metadata/` (titles, post text, tags, credits, transcript) and `qa/`, plus a README and an upload checklist.
 
-The skill grew out of the pipeline that produced the ImuTechz explainer (see `examples/imutechz-explainer/`). That example shows structure only; its lines are blocked from reuse.
+The skill grew out of the pipeline that produced the ImuTechz explainer. That early storyboard is no longer shipped (it is in git history); the examples in `examples/` show structure only, and their lines are blocked from reuse.
+
+**Direction comes from live research, not from bundled samples.** `fishvideo trends <dir>` searches recent videos for the topic and format on every run (ranked by views per day, Shorts separated), writes a contact sheet of their thumbnails, and the agent writes the analysis and a `direction` from it; `--derive-theme` builds a project theme from those thumbnails. `gate` refuses without fresh research. The files are analysis only: never used in the video, committed or packaged.
 
 ## Setup
 
@@ -181,7 +183,7 @@ references/         storyboards, scene catalogue, pacing & music, captions & typ
 scripts/            fishvideo.py (CLI) + Python modules + Node renderer/capture/synth + stage/ (scene library)
 config/defaults.yaml
 templates/          brief.yaml, storyboard.yaml, description.md, tags.txt
-examples/           why-you-cant-put-it-down/ (full narrated sample), showcase/ (style demo), imutechz-explainer/ (structure only)
+examples/           genai-roadmap-long/ (long explainer excerpt), onoda-story-series/ (two story Shorts), gta6-short/ (typographic Short); see examples/README.md
 tests/              pytest + node tests, fixtures
 ```
 

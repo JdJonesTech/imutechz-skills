@@ -305,6 +305,9 @@ def test_interview_maps_answers_and_gates(tmp_path):
     assert b["points"] == ["cue", "routine", "reward"]
     assert any("not confirmed" in e for e in interview.gate(tmp_path, "script"))
     interview.confirm(tmp_path)
+    assert any("trend research missing" in e for e in interview.gate(tmp_path, "script"))   # live research is enforced
+    import trends
+    trends.mark_unavailable(tmp_path, "offline unit test: no search")
     assert interview.gate(tmp_path, "script") == []
     # a storyboard copied from the scaffold is still blocked at render
     save_yaml(tmp_path / "storyboard.yaml", sb.scaffold(load_yaml(tmp_path / "brief.yaml")))
